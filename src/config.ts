@@ -28,8 +28,8 @@ export interface WorkbenchConfig {
   servers: Record<string, McpServerSpec>
   /** How long one probe may take before it is reported as a timeout. */
   probeTimeoutMs: number
+  /** How long one tool call may take before it is reported as a timeout. */
   toolCallTimeoutMs: number
-  connectConcurrency: number
   probeCacheTtlMs: number
   resultMaxBytes: number
   maxToolSchemas: number
@@ -39,7 +39,6 @@ export const DEFAULT_CONFIG: WorkbenchConfig = {
   servers: {},
   probeTimeoutMs: 10_000,
   toolCallTimeoutMs: 60_000,
-  connectConcurrency: 2,
   probeCacheTtlMs: 30_000,
   resultMaxBytes: 262_144,
   maxToolSchemas: 64,
@@ -159,7 +158,6 @@ export function normalizeConfig(raw: unknown): { config: WorkbenchConfig; warnin
       servers,
       probeTimeoutMs: readPositiveInt(source['probeTimeoutMs'], DEFAULT_CONFIG.probeTimeoutMs),
       toolCallTimeoutMs: readPositiveInt(source['toolCallTimeoutMs'], DEFAULT_CONFIG.toolCallTimeoutMs),
-      connectConcurrency: readPositiveInt(source['connectConcurrency'], DEFAULT_CONFIG.connectConcurrency),
       probeCacheTtlMs: readPositiveInt(source['probeCacheTtlMs'], DEFAULT_CONFIG.probeCacheTtlMs),
       resultMaxBytes: readPositiveInt(source['resultMaxBytes'], DEFAULT_CONFIG.resultMaxBytes),
       maxToolSchemas: readPositiveInt(source['maxToolSchemas'], DEFAULT_CONFIG.maxToolSchemas),
