@@ -39,4 +39,3 @@ export function failureOf(error: unknown): { code: FailureCode; message: string;
   }
   return { code: 'invalid-request', message }
 }
-

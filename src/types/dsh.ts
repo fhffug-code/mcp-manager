@@ -79,4 +79,3 @@ export interface DshHostContext {
 export interface DshToolRegistry {
   register(definition: unknown): unknown
 }
-

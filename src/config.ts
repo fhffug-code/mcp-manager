@@ -71,7 +71,10 @@ export function validateServerSpec(spec: unknown): string[] {
   if (transport === 'stdio') {
     if (typeof spec['command'] !== 'string' || spec['command'].trim() === '') problems.push('command is required')
     if (spec['url'] !== undefined) problems.push('url is not used by a stdio server')
-    if (spec['args'] !== undefined && (!Array.isArray(spec['args']) || spec['args'].some((a) => typeof a !== 'string'))) {
+    if (
+      spec['args'] !== undefined &&
+      (!Array.isArray(spec['args']) || spec['args'].some((a) => typeof a !== 'string'))
+    ) {
       problems.push('args must be a list of strings')
     }
   } else {
@@ -129,7 +132,8 @@ export function normalizeServerSpec(spec: unknown): McpServerSpec | undefined {
 /** Read the plugin config, keeping every valid server and reporting the dropped ones. */
 export function normalizeConfig(raw: unknown): { config: WorkbenchConfig; warnings: string[] } {
   const warnings: string[] = []
-  if (raw !== undefined && !isRecord(raw)) return { config: { ...DEFAULT_CONFIG }, warnings: ['config must be an object'] }
+  if (raw !== undefined && !isRecord(raw))
+    return { config: { ...DEFAULT_CONFIG }, warnings: ['config must be an object'] }
   const source = isRecord(raw) ? raw : {}
   const servers: Record<string, McpServerSpec> = {}
   const rawServers = source['servers']

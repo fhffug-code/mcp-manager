@@ -53,7 +53,11 @@ const isTransport = (value: unknown): value is TransportKind => value === 'stdio
  */
 export function applyPatch(raw: Record<string, unknown>, patch: ServerPatch): Record<string, unknown> {
   const next: Record<string, unknown> = { ...raw }
-  const transport = isTransport(patch.transport) ? patch.transport : isTransport(next['transport']) ? next['transport'] : undefined
+  const transport = isTransport(patch.transport)
+    ? patch.transport
+    : isTransport(next['transport'])
+      ? next['transport']
+      : undefined
   setOrDelete(next, 'transport', transport)
   if (transport === 'stdio') {
     delete next['url']

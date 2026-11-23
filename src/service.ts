@@ -53,7 +53,10 @@ export class Workbench {
   private requireEditor(): DshConfigEditor {
     const editor = this.editor()
     if (editor === undefined) {
-      throw new WorkbenchFailure('config-editor-unavailable', 'the config editor service is not available in this profile')
+      throw new WorkbenchFailure(
+        'config-editor-unavailable',
+        'the config editor service is not available in this profile',
+      )
     }
     return editor
   }
@@ -181,7 +184,11 @@ export class Workbench {
     const spec = normalizeServerSpec(merged)
     if (spec === undefined) {
       const problems = validateServerSpec(merged)
-      throw new WorkbenchFailure('invalid-config', problems.join('; ') || 'the server configuration is invalid', problems)
+      throw new WorkbenchFailure(
+        'invalid-config',
+        problems.join('; ') || 'the server configuration is invalid',
+        problems,
+      )
     }
     await this.writeServers({ ...this.options.config().servers, [server.name]: spec })
     return this.detail(server.name)
@@ -190,7 +197,10 @@ export class Workbench {
   async add(request: AddRequest): Promise<ServerView> {
     const name = request.name.trim()
     if (!SERVER_NAME_PATTERN.test(name)) {
-      throw new WorkbenchFailure('invalid-request', 'name must be 1-32 characters of letters, digits, underscore or hyphen')
+      throw new WorkbenchFailure(
+        'invalid-request',
+        'name must be 1-32 characters of letters, digits, underscore or hyphen',
+      )
     }
     if (readInventory(this.source()).some((server) => server.name === name)) {
       throw new WorkbenchFailure('name-conflict', `a server named "${name}" is already mounted`)
@@ -198,7 +208,11 @@ export class Workbench {
     const spec = normalizeServerSpec(request.spec)
     if (spec === undefined) {
       const problems = validateServerSpec(request.spec)
-      throw new WorkbenchFailure('invalid-config', problems.join('; ') || 'the server configuration is invalid', problems)
+      throw new WorkbenchFailure(
+        'invalid-config',
+        problems.join('; ') || 'the server configuration is invalid',
+        problems,
+      )
     }
     await this.writeServers({ ...this.options.config().servers, [name]: spec })
     return this.require(name).view
@@ -207,7 +221,10 @@ export class Workbench {
   async remove(name: string): Promise<void> {
     const server = this.require(name)
     if (server.source !== 'plugin') {
-      throw new WorkbenchFailure('not-editable', `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'} and cannot be removed here`)
+      throw new WorkbenchFailure(
+        'not-editable',
+        `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'} and cannot be removed here`,
+      )
     }
     const servers = { ...this.options.config().servers }
     delete servers[name]
@@ -217,7 +234,10 @@ export class Workbench {
   async setEnabled(name: string, enabled: boolean): Promise<ServerView> {
     const server = this.require(name)
     if (server.source !== 'plugin') {
-      throw new WorkbenchFailure('not-editable', `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'}`)
+      throw new WorkbenchFailure(
+        'not-editable',
+        `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'}`,
+      )
     }
     const current = this.options.config().servers[name]
     if (current === undefined) throw new WorkbenchFailure('unknown-server', `no server named "${name}" is stored here`)
@@ -231,7 +251,10 @@ export class Workbench {
   async restart(name: string): Promise<ServerView> {
     const server = this.require(name)
     if (server.source === 'profile') {
-      throw new WorkbenchFailure('unsupported', `server "${name}" is mounted by the profile; edit it and the row reloads`)
+      throw new WorkbenchFailure(
+        'unsupported',
+        `server "${name}" is mounted by the profile; edit it and the row reloads`,
+      )
     }
     const manager = this.manager()
     if (manager === undefined) throw new WorkbenchFailure('unsupported', 'the MCP manager service is not available')

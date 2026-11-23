@@ -15,10 +15,10 @@ const STATUS: Record<string, number> = {
   'invalid-config': 422,
   'unknown-server': 404,
   'not-editable': 409,
-  'overridden': 409,
+  overridden: 409,
   'name-conflict': 409,
   'config-editor-unavailable': 503,
-  'unsupported': 405,
+  unsupported: 405,
   'probe-failed': 502,
   'call-failed': 502,
 }
@@ -114,7 +114,8 @@ async function dispatch(workbench: Workbench, body: Record<string, unknown>): Pr
 /** Build the route handler the connection serves. */
 export function createHandler(workbench: Workbench): (request: Request) => Promise<Response> {
   return async (request: Request): Promise<Response> => {
-    if (!sameOrigin(request)) return json({ ok: false, error: { code: 'invalid-request', message: 'cross-origin request refused' } }, 403)
+    if (!sameOrigin(request))
+      return json({ ok: false, error: { code: 'invalid-request', message: 'cross-origin request refused' } }, 403)
     let body: unknown
     try {
       body = await request.json()

@@ -13,4 +13,3 @@
   },
   "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/types/**/*.ts"]
 }
-

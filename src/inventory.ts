@@ -53,7 +53,8 @@ export function specFromRecord(record: Record<string, unknown>): McpServerSpec |
   const candidate: McpServerSpec = { transport }
   const command = stringOf(record['command'])
   if (command !== undefined) candidate.command = command
-  if (Array.isArray(record['args'])) candidate.args = record['args'].filter((arg): arg is string => typeof arg === 'string')
+  if (Array.isArray(record['args']))
+    candidate.args = record['args'].filter((arg): arg is string => typeof arg === 'string')
   const cwd = stringOf(record['cwd'])
   if (cwd !== undefined) candidate.cwd = cwd
   const url = stringOf(record['url'])
