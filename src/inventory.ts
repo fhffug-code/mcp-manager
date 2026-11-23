@@ -230,8 +230,9 @@ function managerServers(source: InventorySource, known: ReadonlySet<string>): Re
 /** One consistent picture of the fleet: profile rows first, then this bundle's, then the manager's. */
 export function readInventory(source: InventorySource): ResolvedServer[] {
   const profile = profileServers(source)
-  const plugin = pluginServers(source)
-  const known = new Set<string>([...profile.map((server) => server.name), ...plugin.map((server) => server.name)])
+  const claimed = new Set(profile.map((server) => server.name))
+  const plugin = pluginServers(source).filter((server) => !claimed.has(server.name))
+  const known = new Set<string>([...claimed, ...plugin.map((server) => server.name)])
   return [...profile, ...plugin, ...managerServers(source, known)]
 }
 
