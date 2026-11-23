@@ -23,11 +23,21 @@ const summarize = (value: unknown): string => {
 }
 
 /** A short table of the fleet, so a list answer stays readable. */
-function listText(servers: readonly { name: string; source: string; transport: string; enabled: boolean; endpoint: string; probe?: { ok: boolean; toolCount: number } }[]): string {
+function listText(
+  servers: readonly {
+    name: string
+    source: string
+    transport: string
+    enabled: boolean
+    endpoint: string
+    probe?: { ok: boolean; toolCount: number }
+  }[],
+): string {
   if (servers.length === 0) return 'No MCP servers are mounted in this profile.'
   return servers
     .map((server) => {
-      const probe = server.probe === undefined ? 'not probed' : server.probe.ok ? `${server.probe.toolCount} tools` : 'probe failed'
+      const probe =
+        server.probe === undefined ? 'not probed' : server.probe.ok ? `${server.probe.toolCount} tools` : 'probe failed'
       return `- ${server.name} [${server.source}, ${server.transport}, ${server.enabled ? 'enabled' : 'disabled'}] ${server.endpoint} — ${probe}`
     })
     .join('\n')
@@ -47,17 +57,22 @@ export function definition(workbench: Workbench) {
       },
       name: { type: 'string' as const, description: 'Server name, required by every action except list and add.' },
       tool: { type: 'string' as const, description: 'Tool name for call, exactly as probe reported it.' },
-      arguments: { type: 'json' as const, description: 'JSON object of arguments for call; defaults to {}.', },
-      spec: { type: 'json' as const, description: 'Server spec for add: {transport, command?, args?, env?, cwd?, url?, headers?}.' },
+      arguments: { type: 'json' as const, description: 'JSON object of arguments for call; defaults to {}.' },
+      spec: {
+        type: 'json' as const,
+        description: 'Server spec for add: {transport, command?, args?, env?, cwd?, url?, headers?}.',
+      },
       patch: {
         type: 'json' as const,
-        description: 'Fields to change for save; an omitted field keeps its value and null removes it. env/headers merge by key.',
+        description:
+          'Fields to change for save; an omitted field keeps its value and null removes it. env/headers merge by key.',
       },
       enabled: { type: 'boolean' as const, description: 'New state for setEnabled.' },
       force: { type: 'boolean' as const, description: 'For probe: ignore the cached result.' },
       confirm: {
         type: 'boolean' as const,
-        description: 'Required true for call, save, add, remove, setEnabled and restart; without it the tool changes nothing.',
+        description:
+          'Required true for call, save, add, remove, setEnabled and restart; without it the tool changes nothing.',
       },
     },
     output: {

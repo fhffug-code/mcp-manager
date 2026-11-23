@@ -120,7 +120,10 @@ async function withDeadline<T>(work: Promise<T>, timeoutMs: number, message: str
 }
 
 /** Every tool a server lists, bounded by pages, names and the schema budget. */
-async function listTools(client: Client, maxSchemas: number): Promise<{ items: ProbeTool[]; total: number; truncated: boolean }> {
+async function listTools(
+  client: Client,
+  maxSchemas: number,
+): Promise<{ items: ProbeTool[]; total: number; truncated: boolean }> {
   const items: ProbeTool[] = []
   let total = 0
   let truncated = false
@@ -155,14 +158,25 @@ function toContent(block: unknown): CallContent {
       return { type: 'text', text: typeof record['text'] === 'string' ? record['text'] : '' }
     case 'image': {
       const data = typeof record['data'] === 'string' ? record['data'] : ''
-      return { type: 'image', mimeType: String(record['mimeType'] ?? 'application/octet-stream'), bytes: Math.floor((data.length * 3) / 4) }
+      return {
+        type: 'image',
+        mimeType: String(record['mimeType'] ?? 'application/octet-stream'),
+        bytes: Math.floor((data.length * 3) / 4),
+      }
     }
     case 'audio': {
       const data = typeof record['data'] === 'string' ? record['data'] : ''
-      return { type: 'audio', mimeType: String(record['mimeType'] ?? 'application/octet-stream'), bytes: Math.floor((data.length * 3) / 4) }
+      return {
+        type: 'audio',
+        mimeType: String(record['mimeType'] ?? 'application/octet-stream'),
+        bytes: Math.floor((data.length * 3) / 4),
+      }
     }
     case 'resource': {
-      const resource = typeof record['resource'] === 'object' && record['resource'] !== null ? (record['resource'] as Record<string, unknown>) : {}
+      const resource =
+        typeof record['resource'] === 'object' && record['resource'] !== null
+          ? (record['resource'] as Record<string, unknown>)
+          : {}
       const text = typeof resource['text'] === 'string' ? resource['text'] : undefined
       const blob = typeof resource['blob'] === 'string' ? resource['blob'] : undefined
       return {
@@ -185,7 +199,10 @@ function toContent(block: unknown): CallContent {
 }
 
 /** Normalize a tool result within the byte budget. */
-function normalizeContent(blocks: readonly unknown[], maxBytes: number): { content: CallContent[]; truncated: boolean } {
+function normalizeContent(
+  blocks: readonly unknown[],
+  maxBytes: number,
+): { content: CallContent[]; truncated: boolean } {
   const content: CallContent[] = []
   let used = 0
   for (const block of blocks) {
@@ -209,7 +226,11 @@ const failedProbe = (probedAt: string, durationMs: number, error: ProbeError): P
 })
 
 /** Connect, read the server identity, and list its tools without registering anything. */
-export async function probeServer(spec: McpServerSpec, options: ProbeOptions, signal?: AbortSignal): Promise<ProbeResult> {
+export async function probeServer(
+  spec: McpServerSpec,
+  options: ProbeOptions,
+  signal?: AbortSignal,
+): Promise<ProbeResult> {
   const started = Date.now()
   const probedAt = new Date().toISOString()
   const unresolved = unresolvedCredentials(spec)
@@ -221,7 +242,11 @@ export async function probeServer(spec: McpServerSpec, options: ProbeOptions, si
   }
   try {
     return await withClient(spec, options.probeTimeoutMs, signal, async (client) => {
-      const listed = await withDeadline(listTools(client, options.maxToolSchemas), options.probeTimeoutMs, 'MCP tools/list timed out')
+      const listed = await withDeadline(
+        listTools(client, options.maxToolSchemas),
+        options.probeTimeoutMs,
+        'MCP tools/list timed out',
+      )
       const info = client.getServerVersion()
       return {
         ok: true,
@@ -241,7 +266,10 @@ export async function probeServer(spec: McpServerSpec, options: ProbeOptions, si
       }
     })
   } catch (error) {
-    return failedProbe(probedAt, Date.now() - started, { stage: stageOf(error, 'initialize'), message: messageOf(error) })
+    return failedProbe(probedAt, Date.now() - started, {
+      stage: stageOf(error, 'initialize'),
+      message: messageOf(error),
+    })
   }
 }
 

@@ -39,7 +39,7 @@ await build({
   platform: 'browser',
   target: 'es2022',
   jsx: 'automatic',
-  external: ['react'],
+  external: ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],
   plugins: [tsFromJs],
   logLevel: 'warning',
 })
@@ -62,4 +62,3 @@ const wrapped = [
 await writeFile(outputPath, wrapped, 'utf8')
 await rm(bundlePath)
 console.log(`built ${outputPath}`)
-
