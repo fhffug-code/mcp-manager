@@ -47,6 +47,11 @@ A profile row cannot be added, removed or disabled here: those are entry options
 `configEditor.edit()` does not write. A profile row also cannot be restarted, because the
 manager does not govern it. The page says so instead of pretending otherwise.
 
+A row the patch mounts inside an `insert:` group is edited by writing a top-level row that
+carries the whole configuration, because that is the row `configEditor.edit()` can address;
+the insert child stays as it was and the new row takes precedence. Removing the last change
+removes that row again, so the file returns to what it held before.
+
 ## The page
 
 Pick a server on the left. The right pane shows the fields the row actually stores:
