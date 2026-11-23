@@ -1,0 +1,3 @@
+- insert:
+    - id: mcp-workbench
+      name: '@local/dsh-mcp-workbench'

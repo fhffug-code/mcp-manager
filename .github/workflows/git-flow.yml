@@ -1,0 +1,40 @@
+name: Git Flow
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    name: Check where the pull request comes from
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only a release or a hotfix branch may reach main
+        if: github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            release/*|hotfix/*) echo "$HEAD_REF may reach main" ;;
+            *)
+              echo "::error::$HEAD_REF must be merged through a release/* or hotfix/* branch, not straight into main"
+              exit 1
+              ;;
+          esac
+
+      - name: develop only takes features, releases, hotfixes and back-merges
+        if: github.base_ref == 'develop'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            feature/*|release/*|hotfix/*|dependabot/*) echo "$HEAD_REF may reach develop" ;;
+            main) echo "a back-merge from main may reach develop" ;;
+            *)
+              echo "::error::$HEAD_REF must be a feature/*, release/*, hotfix/* or dependabot/* branch"
+              exit 1
+              ;;
+          esac
