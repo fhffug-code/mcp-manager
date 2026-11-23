@@ -16,8 +16,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - A `mcp_workbench` tool with `list`, `detail`, `probe`, `call`, `save`, `add`, `remove`, `setEnabled` and `restart`; every change needs `confirm: true`.
 - An English and a Chinese locale for the page and the bundle metadata.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
-- A vitest suite of 133 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real.
+- A vitest suite of 134 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real.
 - GitHub Actions: the verification pipeline and a Git Flow guard on pull request sources.
+
+### Fixed
+
+- A profile row inserted by the patch reported empty `env` and `headers`, because its raw config arrives in the inherited layer while the override stays empty; saving such a row would have written the config without its environment.
 
 [Unreleased]: https://github.com/fhffug/mcp-manager/compare/v0.1.0...develop
 [0.1.0]: https://github.com/fhffug/mcp-manager/releases/tag/v0.1.0
