@@ -153,14 +153,12 @@ describe('normalizeConfig', () => {
     const { config } = normalizeConfig({
       probeTimeoutMs: 5_000,
       toolCallTimeoutMs: 0,
-      connectConcurrency: 3.5,
       probeCacheTtlMs: -1,
       resultMaxBytes: 1024,
       maxToolSchemas: '8',
     })
     expect(config.probeTimeoutMs).toBe(5_000)
     expect(config.toolCallTimeoutMs).toBe(DEFAULT_CONFIG.toolCallTimeoutMs)
-    expect(config.connectConcurrency).toBe(DEFAULT_CONFIG.connectConcurrency)
     expect(config.probeCacheTtlMs).toBe(DEFAULT_CONFIG.probeCacheTtlMs)
     expect(config.resultMaxBytes).toBe(1024)
     expect(config.maxToolSchemas).toBe(DEFAULT_CONFIG.maxToolSchemas)
