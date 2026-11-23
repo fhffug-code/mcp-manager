@@ -131,6 +131,33 @@ describe('readInventory', () => {
     expect(servers[0]?.raw).toEqual({ from: 'home' })
   })
 
+  it('reads a row the profile inserts through a patch, whose override is empty', () => {
+    const inserted: DshConfigLayer = {
+      entry: entry({
+        id: 'mcp-github',
+        name: MCP_CLIENT_PLUGIN,
+        config: {
+          serverName: 'github',
+          transport: 'stdio',
+          command: 'gh.exe',
+          args: ['stdio'],
+          env: { GITHUB_TOKEN: 'resolved' },
+        },
+      }),
+      inherited: {
+        serverName: 'github',
+        transport: 'stdio',
+        command: 'gh.exe',
+        args: ['stdio'],
+        env: { GITHUB_TOKEN: { __jsExpr: 'process.env.T' } },
+      },
+      override: {},
+    }
+    const [github] = readInventory(source({ layers: [inserted] }))
+    expect(github?.raw).toEqual(inserted.inherited)
+    expect(github?.view.env).toEqual({ GITHUB_TOKEN: { value: null, secret: true, expression: 'process.env.T' } })
+  })
+
   it('reports a disabled row as disabled', () => {
     const servers = readInventory(
       source({

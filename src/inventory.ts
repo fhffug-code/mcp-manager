@@ -2,7 +2,7 @@
 import type { McpServerSpec, WorkbenchConfig } from './config.js'
 import { normalizeServerSpec } from './config.js'
 import { fieldsOf } from './edit.js'
-import type { DshConfigEditor, DshLoaderEntry, DshMcpManager } from './types/dsh.js'
+import type { DshConfigEditor, DshConfigLayer, DshLoaderEntry, DshMcpManager } from './types/dsh.js'
 import type { ProbeSummary, ReadOnlyReason, ServerSource, ServerTimeouts, ServerView } from './types/index.js'
 
 /** The plugin whose rows the profile mounts as static MCP clients. */
@@ -134,6 +134,17 @@ const stateOf = (status: unknown): string => {
   return typeof status['state'] === 'string' ? status['state'] : 'unknown'
 }
 
+/**
+ * The layer one profile row's own config lives in.
+ * A row the profile inserts through `insert:` has no top-level `id`, so the config editor reports its
+ * `override` as an empty object and hands the real values back as `inherited`.
+ */
+function rawConfigOf(layer: DshConfigLayer): Record<string, unknown> {
+  const override = isRecord(layer.override) ? layer.override : {}
+  if (Object.keys(override).length > 0) return override
+  return isRecord(layer.inherited) ? layer.inherited : {}
+}
+
 /** The servers belonging to the profile's static rows. */
 function profileServers(source: InventorySource): ResolvedServer[] {
   const editor = source.configEditor()
@@ -142,7 +153,7 @@ function profileServers(source: InventorySource): ResolvedServer[] {
   const resolved: ResolvedServer[] = []
   for (const layer of layers) {
     if (layer.entry.options.name !== MCP_CLIENT_PLUGIN) continue
-    const raw = isRecord(layer.override) ? layer.override : layer.inherited
+    const raw = rawConfigOf(layer)
     const evaluated = layer.entry.options.config ?? {}
     const name = nameOfRow(layer.entry, raw, evaluated)
     const spec = specFromRecord(evaluated)
