@@ -270,6 +270,7 @@ export class Workbench {
     const entry = this.ownEntry(editor)
     await editor.edit(entry, (current) => ({ ...current, servers }))
     this.options.applyServers?.(servers)
+    this.releaseAll()
     this.syncRegistrations()
   }
 
@@ -292,17 +293,22 @@ export class Workbench {
   start(): () => void {
     this.syncRegistrations()
     return () => {
-      for (const dispose of this.registered.values()) {
-        try {
-          dispose()
-        } catch {
-          // A registration that already went away needs no cleanup.
-        }
-      }
-      this.registered.clear()
+      this.releaseAll()
       this.inflight.clear()
       this.probes.clear()
     }
+  }
+
+  /** Drop every live registration, so the next sync starts from the stored map alone. */
+  private releaseAll(): void {
+    for (const [name, dispose] of [...this.registered]) {
+      try {
+        dispose()
+      } catch (error) {
+        this.options.ctx.logger.warn(`mcp-workbench: ${name} was not released:`, error)
+      }
+    }
+    this.registered.clear()
   }
 
   /** Make the live fleet match the stored server map. */

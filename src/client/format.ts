@@ -59,7 +59,7 @@ const milliseconds = (text: string): number | null | undefined => {
   return Number.isInteger(value) && value > 0 ? value : undefined
 }
 
-/** Only the entries the user touched, so untouched secrets keep their stored value. */
+/** Every entry that still has a value; a masked secret is left alone, so it keeps its stored value. */
 function changedFields(rows: readonly Row[]): Record<string, string | null> | undefined {
   const change: Record<string, string | null> = {}
   for (const row of rows) {

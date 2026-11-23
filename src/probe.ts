@@ -76,7 +76,11 @@ export function unresolvedCredentials(spec: McpServerSpec): string[] {
 function stageOf(error: unknown, fallback: ProbeStage): ProbeStage {
   const message = messageOf(error)
   if (/timed out|timeout/i.test(message)) return 'timeout'
-  if (/ENOENT|EACCES|EPERM|spawn|fetch failed|ECONNREFUSED|ECONNRESET|401|403|404|5\d\d/i.test(message)) {
+  if (
+    /ENOENT|EACCES|EPERM|spawn|not found|connection closed|fetch failed|ECONNREFUSED|ECONNRESET|401|403|404|5\d\d/i.test(
+      message,
+    )
+  ) {
     return 'transport'
   }
   return fallback
@@ -92,7 +96,9 @@ async function withClient<T>(
   const client = new Client({ name: 'dsh-mcp-workbench', version: PLUGIN_VERSION }, { capabilities: {} })
   const controller = new AbortController()
   const forward = (): void => controller.abort(signal?.reason)
+  if (signal?.aborted === true) forward()
   signal?.addEventListener('abort', forward, { once: true })
+  if (controller.signal.aborted) throw controller.signal.reason ?? new Error('MCP connection aborted')
   try {
     await client.connect(createTransport(spec), { signal: controller.signal, timeout: timeoutMs })
     return await body(client)

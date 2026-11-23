@@ -71,9 +71,15 @@ export function applyPatch(raw: Record<string, unknown>, patch: ServerPatch): Re
     delete next['env']
     setOrDelete(next, 'url', patch.url)
   }
-  if (patch.headers !== undefined) setOrDelete(next, 'headers', mergeFields(next['headers'], patch.headers))
+  if (patch.headers !== undefined) {
+    const merged = mergeFields(next['headers'], patch.headers)
+    if (merged === undefined) delete next['headers']
+    else next['headers'] = merged
+  }
   if (patch.env !== undefined && transport !== 'streamable-http') {
-    setOrDelete(next, 'env', mergeFields(next['env'], patch.env))
+    const merged = mergeFields(next['env'], patch.env)
+    if (merged === undefined) delete next['env']
+    else next['env'] = merged
   }
   for (const key of ['toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs'] as const) {
     setOrDelete(next, key, patch[key])
@@ -91,7 +97,22 @@ function mergeFields(current: unknown, change: Record<string, string | null>): R
   return Object.keys(merged).length === 0 ? undefined : merged
 }
 
+/** A copy of the maps with each `!!js` expression replaced by a string, so the spec validator accepts it. */
+function resolvable(next: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...next }
+  for (const key of ['env', 'headers'] as const) {
+    const value = copy[key]
+    if (!isRecord(value)) continue
+    const resolved: Record<string, string> = {}
+    for (const [name, item] of Object.entries(value)) {
+      resolved[name] = typeof item === 'string' ? item : 'expression'
+    }
+    copy[key] = resolved
+  }
+  return copy
+}
+
 /** Problems with a patched config, in the words the caller shows; empty means valid. */
 export function validatePatched(next: Record<string, unknown>): string[] {
-  return validateServerSpec(next)
+  return validateServerSpec(resolvable(next))
 }
