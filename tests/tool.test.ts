@@ -192,7 +192,7 @@ describe('the actions that report a result', () => {
 
 describe('registerTool', () => {
   it('registers the definition inside an effect', () => {
-    const register = vi.fn(() => () => undefined)
+    const register = vi.fn((_definition: unknown) => () => undefined)
     const ctx = fakeContext({ tools: { register } })
     registerTool(ctx, { list: () => [] } as unknown as Workbench)
     expect(ctx.effects).toEqual(['mcp-workbench/tool'])
