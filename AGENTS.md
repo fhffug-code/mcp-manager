@@ -5,20 +5,21 @@ How to work in this repository when you are an agent rather than a person.
 ## 1. What this repository is / 这个仓库是什么
 
 **English.** `@local/dsh-mcp-workbench` is a DeepSeek Harness plugin, written in TypeScript and run on
-Node 22. It is a private bundle installed into a profile, not a package published to a registry. It
-exposes the MCP servers a profile mounts and lets a person inspect, edit, probe and call them from
-**Settings → Plugins → MCP Workbench**, and lets the model do the same through the `mcp_workbench`
-tool. Both surfaces call one service, and one same-origin route (`POST /api/mcp-workbench`) carries
-the browser traffic. The three server sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows
-of the profile patch), `plugin` (the servers this bundle owns in its own config row) and `manager`
-(whatever else registered on `mcpManager`, read-only).
+Node 22. It is a private bundle installed into a profile, not a package published to a registry. It owns
+one entry in the sidebar — **MCP**, after **Plugins** and the marketplace — and the page that entry
+opens: servers on the left, tools in the middle, one tool's detail and test call on the right. The same
+operations are exposed to the model through the `mcp_workbench` tool. Both surfaces call one service,
+and one same-origin route (`POST /api/mcp-workbench`) carries the browser traffic. The three server
+sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows of the profile patch), `plugin` (the
+servers this bundle owns in its own config row) and `manager` (whatever else registered on
+`mcpManager`, read-only).
 
 **中文。** `@local/dsh-mcp-workbench` 是一个用 TypeScript 编写、运行在 Node 22 上的 DeepSeek Harness
-插件。它是装进 profile 的私有 bundle，不发布到任何 registry。它把 profile 挂载的 MCP 服务器列出来，
-让用户在「设置 → 插件 → MCP 工作台」里查看、修改、探测和调用，也让模型通过 `mcp_workbench` 工具做同样
-的事。两个界面共用同一个 service，浏览器只走一条同源路由 `POST /api/mcp-workbench`。三个来源分别
-是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client` 静态行）、`plugin`（本 bundle 自己配置行里
-的服务器）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
+插件。它是装进 profile 的私有 bundle，不发布到任何 registry。它在左侧栏占一个入口「MCP」（排在【插件】
+与插件市场之后），并拥有它打开的页面：左边服务器、中间工具、右边单个工具的说明与试调用。同样的操作也
+通过 `mcp_workbench` 工具暴露给模型。两个界面共用同一个 service，浏览器只走一条同源路由
+`POST /api/mcp-workbench`。三个来源分别是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client`
+静态行）、`plugin`（本 bundle 自己配置行里的服务器）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
 
 ## 2. How to run commands on this machine / 这台机器怎么跑命令
 
@@ -156,6 +157,9 @@ release 线也带上这个修复。
   the tool renders `<code>: <message>`.
 - **Style only with real tokens.** Use `--dsw-alias-*` and `--ds-font-family-code`; an invented token
   silently falls back and breaks dark mode.
+- **One id for a panel.** The row registers into `sidebar.panellist` and the page into the keyed `main`
+  slot with the same value; a mismatch throws when a person picks the row. The page itself pads its top
+  by `--dsh-frame-top-clearance`, because it is not the conversation.
 - **The client does not import Harness client packages.** `react` arrives through `require('react')`;
   the bundle is wrapped by `scripts/build-client.mjs`.
 - **Tests come with the change.** New action → its refusal paths; parser change → the value that broke.
@@ -174,6 +178,8 @@ release 线也带上这个修复。
   `<code>: <message>`。
 - **只用真实 token 写样式**：用 `--dsw-alias-*` 和 `--ds-font-family-code`；编造的 token 会静默回退，
   深色模式就会坏。
+- **一个面板一个 id**：侧栏行注册进 `sidebar.panellist`，页面注册进 keyed `main`，两处的值必须相同；
+  不一致时用户一点那一行就抛错。页面顶部要按 `--dsh-frame-top-clearance` 留白，因为它不是会话页。
 - **客户端不 import Harness 的客户端包**：`react` 通过 `require('react')` 进来，bundle 由
   `scripts/build-client.mjs` 包裹。
 - **测试随改动一起提交**：新动作要有拒绝路径，解析器改动要有当初坏掉的那个值。
@@ -186,7 +192,8 @@ release 线也带上这个修复。
   is empty and the raw config arrives in `inherited`. `rawConfigOf()` handles it; a write to such a row
   appends a new top-level override row, and removing the last change removes that row again.
 - `configEditor.edit()` can change a row's `config` only: it cannot insert or delete a row, and it cannot
-  touch `disabled`.
+  touch `disabled`. Switching a profile row is `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`,
+  where `entryId` is the row's `entry.options.id`.
 - `install_bundle` can fail once with `EPERM … rename package.json.<digits>`; an identical retry succeeds.
 - esbuild's postinstall is blocked under the bundled npm, but its JS API works — `scripts/build-client.mjs`
   uses it. Never call `npx esbuild`.
@@ -202,7 +209,9 @@ token`), so a human presses **Merge**; `gh` is not installed.
 - profile 补丁里五个 MCP 行都在同一个 `- insert:` 组里，所以 `configuration().override` 是空的，真实原始
   配置出现在 `inherited` 里。`rawConfigOf()` 已经处理；对这种行写入会在文件末尾追加一条顶层覆盖行，撤掉
   最后一次改动时那条行会再次被删掉。
-- `configEditor.edit()` 只能改某行的 `config`：不能插入/删除行，也碰不到 `disabled`。
+- `configEditor.edit()` 只能改某行的 `config`：不能插入/删除行，也碰不到 `disabled`。要启停 profile 行
+  只能走 `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`，`entryId` 就是该行的
+  `entry.options.id`。
 - `install_bundle` 偶尔第一次失败于 `EPERM … rename package.json.<数字>`，原样重试即成功。
 - 自带的 npm 屏蔽了 esbuild 的 postinstall，但它的 JS API 可用，`scripts/build-client.mjs` 用的就是它。
   不要调 `npx esbuild`。

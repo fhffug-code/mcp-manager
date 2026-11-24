@@ -1,20 +1,21 @@
 # MCP Workbench
 
-A DeepSeek Harness plugin that shows the MCP servers this profile mounts, edits their configuration, probes them for the tools they expose, and sends a tool call with arguments you type — from a Settings page and from a tool the model can use.
+A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after **Plugins** and the plugin marketplace. It lists the MCP servers this profile mounts, edits their configuration, switches them on and off, probes them for the tools they expose, and lets you send a tool call with arguments that were prefilled from the tool's own schema — from that page and from a tool the model can use.
 
-**中文简介**：这个插件在「设置 → 插件」里加一个「MCP 工作台」页面，可以查看当前 profile 挂载的所有 MCP 服务器、就地修改配置、探测工具数量与入参 schema、并直接传参调用工具；同时注册一个 `mcp_workbench` 工具，让模型也能做同样的事。所有改动都走 DSH 官方的 ConfigEditor，不会手写 profile 配置文件。
+**中文简介**：这个插件在左侧栏【插件】【插件市场】之后加一个「MCP」入口，进来是「MCP 管理」页面：查看当前 profile 挂载的所有 MCP 服务器、就地修改配置、启动或关闭服务器、探测工具并直接传参调用（参数按该工具的 inputSchema 预填）；同时注册一个 `mcp_workbench` 工具，让模型也能做同样的事。所有改动都走 DSH 官方的 ConfigEditor 与 plugin_manager，不会手写 profile 配置文件。
 
 ## What it does
 
-- **See every server.** Profile rows (`@deepseek-ai/dsh-mcp-client` entries in the profile patch), the servers this bundle owns, and servers other plugins registered through `mcpManager` appear in one list with their transport, live state, and endpoint.
+- **See every server.** Profile rows (`@deepseek-ai/dsh-mcp-client` entries in the profile patch), the servers this bundle owns, and servers other plugins registered through `mcpManager` appear in one searchable list with their transport, live state, and endpoint.
+- **Switch a server on or off.** A profile row is toggled through the official plugin manager, which rewrites only `disabled` in the profile patch; a server this bundle owns is toggled in its own row.
 - **Edit in place.** A profile row is edited through `ctx.configEditor.edit()`, so comments and `!!js` expressions survive and the row is validated before it is written. A missing field keeps its stored value, an empty one removes it.
 - **Probe for tools.** The probe opens its own short-lived MCP connection, so it works on a disabled server, does not disturb the connection the agent is using, and returns tool names, descriptions and input schemas with a name and schema budget.
-- **Test a call.** Pick a tool, type a JSON argument object, and read what came back: text, images, resources, or a tool-level error.
-- **One logic, two surfaces.** The Settings page and the model-facing tool call the same Host service, so both behave the same way.
+- **Test a call.** Pick a tool, get its arguments prefilled from the input schema, send them, and read the answer three ways: JSON, a foldable tree, or the raw request and response.
+- **One logic, two surfaces.** The page and the model-facing tool call the same Host service, so both behave the same way.
 
 ## Requirements
 
-- DeepSeek Harness with the Settings → Plugins section (the Desktop and Web shells both have it).
+- DeepSeek Harness with the sidebar and the plugin manager (the Desktop and Web shells both have them).
 - Node.js 22 or newer to build the bundle.
 
 ## Install
@@ -33,19 +34,20 @@ Then install the folder as a profile bundle and restart the Harness:
 plugin_manager  action=install_bundle  target="<absolute path to this folder>"
 ```
 
-The bundle stays installed across restarts and belongs to the profile, not to one session. Settings → Plugins → **MCP Workbench** is the page, and `mcp_workbench` is the tool.
+The bundle stays installed across restarts and belongs to the profile, not to one session. **MCP** in the sidebar opens the page, and `mcp_workbench` is the tool.
 
 ## The three sources of a server
 
 | Source    | What it is                                              | What this plugin may do                     |
 | --------- | ------------------------------------------------------- | ------------------------------------------- |
-| `profile` | A static `@deepseek-ai/dsh-mcp-client` row in the patch | Edit its configuration in place             |
+| `profile` | A static `@deepseek-ai/dsh-mcp-client` row in the patch | Edit its configuration, switch it on or off |
 | `plugin`  | A server stored in this bundle's own `servers` config   | Add, remove, enable, disable, edit, restart |
 | `manager` | A server another plugin registered on `ctx.mcpManager`  | Read it, restart it                         |
 
-A profile row cannot be added, removed or disabled here: those are entry options that
-`configEditor.edit()` does not write. A profile row also cannot be restarted, because the
-manager does not govern it. The page says so instead of pretending otherwise.
+A profile row cannot be added or removed here: those are entry options that
+`configEditor.edit()` does not write. It can be switched on and off, because that is what the
+plugin manager writes. A profile row also cannot be restarted, because the manager does not
+govern it. The page says so instead of pretending otherwise.
 
 A row the patch mounts inside an `insert:` group is edited by writing a top-level row that
 carries the whole configuration, because that is the row `configEditor.edit()` can address;
@@ -54,12 +56,28 @@ removes that row again, so the file returns to what it held before.
 
 ## The page
 
-Pick a server on the left. The right pane shows the fields the row actually stores:
+Three columns, each with its own search box where it lists things:
+
+- **Servers.** Every server the profile mounts, with its source, transport and state. The dot
+  switches it on or off; the gear opens its configuration. The search filters by name, source
+  and endpoint.
+- **Tools.** Pick a server and press **Test connection**: the probe connects once and the
+  button moves to the top of the tool list it produced. Each row shows the tool name and two
+  lines of its description; the search filters on both.
+- **One tool.** The upper half is the tool's description, the lower half is a test call that
+  takes as much room as the window allows. The arguments are prefilled from the tool's input
+  schema (`default`, then `examples[0]`, then the first `enum` member, then an empty value of
+  the right type), and stay editable as JSON.
+
+Press **Send** and read the answer as **JSON**, as a **Tree** of foldable nodes, or as the
+**Raw** request and response pair. A tool that reports `isError` is still a result, not a
+failed request, and the page says which one it got.
+
+The configuration form is a dialog behind the gear:
 
 - **Transport** switches the form between `stdio` (command, arguments, working directory) and `streamable-http` (URL).
 - **Environment** and **headers** are edited row by row; a value whose name looks like a secret (`TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`) is shown masked and is never sent to the browser.
 - A `!!js` value is shown as the expression behind it and is written back as an expression.
-- **Probe** lists the tools with their descriptions and schemas; **Call** sends one tool call with the JSON arguments you typed.
 
 Refusals are shown with the reason the Host gave: an unknown server, a read-only source, a name that is already taken, a value that would not parse, or a field a home patch overrides.
 
@@ -99,7 +117,7 @@ The row this bundle mounts takes these options:
 | `toolCallTimeoutMs` | `60000`  | How long one test call may take                   |
 | `probeCacheTtlMs`   | `30000`  | How long a probe result is reused                 |
 | `resultMaxBytes`    | `262144` | The budget for the content a test call may return |
-| `maxToolSchemas`    | `64`     | How many tool schemas one probe may collect       |
+| `maxToolSchemas`    | `200`    | How many tool schemas one probe may collect       |
 
 ## Safety
 
@@ -129,7 +147,7 @@ The layout:
 - `src/route.ts` — the same-origin JSON endpoint.
 - `src/tool.ts` — the model-facing definition.
 - `src/probe.ts` — the throwaway MCP connection used by probe and call.
-- `src/client/` — the Settings tab.
+- `src/client/` — the sidebar panel: the page, the tool editor, the schema prefill and the two result views.
 - `tests/` — the suite, including `tests/fixtures/stdio-server.mjs`.
 
 `main` is the development line and `release/<minor>` branches hold a version being stabilised: see
