@@ -31,7 +31,7 @@ async function post<T>(body: Record<string, unknown>): Promise<T> {
   } catch {
     throw new ApiError('transport', `the Harness answered ${response.status} without a JSON body`)
   }
-  if (payload.ok !== true) throw new ApiError(payload.error.code, payload.error.message)
+  if (!payload.ok) throw new ApiError(payload.error.code, payload.error.message)
   return payload.value
 }
 

@@ -3,16 +3,19 @@ import { apply } from '../src/index.js'
 import { ROUTE_PATH } from '../src/route.js'
 import { TOOL_NAME } from '../src/tool.js'
 import { PLUGIN_NAME } from '../src/version.js'
-import type { DshConnection } from '../src/types/dsh.js'
+import type { DshConnection, DshFetchRoute } from '../src/types/dsh.js'
 import { entry, fakeContext, fakeEditor, fakeManager } from './helpers/fakes.js'
 
-const connection = (register: ReturnType<typeof vi.fn>): DshConnection =>
+const connection = (register: (route: DshFetchRoute) => unknown): DshConnection =>
   ({ fetch: { register } }) as unknown as DshConnection
+
+/** A registry that records the definition it was handed. */
+const toolRegistry = () => vi.fn((_definition: unknown) => () => undefined)
 
 describe('apply', () => {
   it('mounts the registrations, the route and the tool', () => {
-    const register = vi.fn(() => () => undefined)
-    const tools = vi.fn(() => () => undefined)
+    const register = vi.fn((_route: DshFetchRoute) => () => undefined)
+    const tools = toolRegistry()
     const manager = fakeManager()
     const editor = fakeEditor([
       { entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers: {} } }), inherited: {} },
@@ -29,7 +32,7 @@ describe('apply', () => {
 
   it('reports the config it had to drop and keeps the rest', () => {
     const manager = fakeManager()
-    const ctx = fakeContext({ manager, connection: connection(vi.fn(() => () => undefined)) })
+    const ctx = fakeContext({ manager, connection: connection(() => () => undefined) })
 
     apply(ctx, { servers: { broken: { transport: 'stdio' } } })
 
@@ -38,7 +41,7 @@ describe('apply', () => {
   })
 
   it('keeps the servers it stores in step with the route', async () => {
-    const register = vi.fn(() => () => undefined)
+    const register = vi.fn((_route: DshFetchRoute) => () => undefined)
     const manager = fakeManager()
     const editor = fakeEditor([
       { entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers: {} } }), inherited: {} },

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ROUTE_PATH, createHandler, registerRoute } from '../src/route.js'
 import { WorkbenchFailure } from '../src/failures.js'
+import type { FailureCode } from '../src/failures.js'
 import type { Workbench } from '../src/service.js'
-import type { DshConnection } from '../src/types/dsh.js'
+import type { DshConnection, DshFetchRoute } from '../src/types/dsh.js'
 
 const URL_BASE = 'http://127.0.0.1:8627/api/mcp-workbench'
 
@@ -157,7 +158,7 @@ describe('createHandler', () => {
   })
 
   it('maps a refusal to its status and code', async () => {
-    const cases: [string, number][] = [
+    const cases: [FailureCode, number][] = [
       ['unknown-server', 404],
       ['not-editable', 409],
       ['overridden', 409],
@@ -218,7 +219,7 @@ describe('createHandler', () => {
 
 describe('registerRoute', () => {
   it('registers one POST route and returns its disposer', () => {
-    const register = vi.fn(() => () => undefined)
+    const register = vi.fn((_route: DshFetchRoute) => () => undefined)
     const dispose = registerRoute({ fetch: { register } } as unknown as DshConnection, stub())
     expect(register).toHaveBeenCalledTimes(1)
     const route = register.mock.calls[0]?.[0] as unknown as {

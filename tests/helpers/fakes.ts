@@ -1,5 +1,6 @@
 /** Host stand-ins: the config editor, the MCP manager and the context the service consumes. */
 import { vi } from 'vitest'
+import type { Mock } from 'vitest'
 import type {
   DshConfigEditor,
   DshConfigLayer,
@@ -7,6 +8,7 @@ import type {
   DshCredentialsFace,
   DshHostContext,
   DshLoaderEntry,
+  DshLogger,
   DshManagedServerView,
   DshMcpManager,
   DshPluginManagerFace,
@@ -116,8 +118,15 @@ export function fakeCredentials(values: Record<string, string> = {}): FakeCreden
   }
 }
 
+/** The logger, kept typed so a test can assert what the service reported. */
+export interface FakeLogger {
+  info: Mock<DshLogger['info']>
+  warn: Mock<DshLogger['warn']>
+  error: Mock<DshLogger['error']>
+}
+
 export interface FakeContext extends DshHostContext {
-  logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> }
+  logger: FakeLogger
   effects: string[]
 }
 
@@ -141,7 +150,11 @@ export function fakeContext(options: FakeContextOptions = {}): FakeContext {
     connection: options.connection,
   }
   const effects: string[] = []
-  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+  const logger: FakeLogger = {
+    info: vi.fn<DshLogger['info']>(),
+    warn: vi.fn<DshLogger['warn']>(),
+    error: vi.fn<DshLogger['error']>(),
+  }
   const context: FakeContext = {
     logger,
     effects,

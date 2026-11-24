@@ -6,6 +6,7 @@ import { PLUGIN_NAME } from '../src/version.js'
 import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN } from '../src/inventory.js'
 import { entry, fakeContext, fakeCredentials, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
 import type { ConnectionPool } from '../src/connection.js'
+import type { DshConfigLayer } from '../src/types/dsh.js'
 
 /** A pool that records what the service asked it to close, without opening anything. */
 function fakeConnections(): { pool: ConnectionPool; closed: string[] } {
@@ -71,7 +72,7 @@ interface Harness {
 
 function harness(
   options: {
-    layers?: ReturnType<typeof clientLayer>[]
+    layers?: DshConfigLayer[]
     servers?: WorkbenchConfig['servers']
     manager?: ReturnType<typeof fakeManager>
     editor?: boolean
