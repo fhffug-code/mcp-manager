@@ -8,6 +8,7 @@ import type {
   DshLoaderEntry,
   DshManagedServerView,
   DshMcpManager,
+  DshPluginManagerFace,
   DshToolRegistry,
 } from '../../src/types/dsh.js'
 
@@ -73,6 +74,22 @@ export function fakeManager(views: DshManagedServerView[] = []): FakeManager {
   }
 }
 
+export interface FakePluginManager extends DshPluginManagerFace {
+  calls: { id: string; enabled: boolean }[]
+}
+
+/** The profile manager, recording which entry each switch targeted. */
+export function fakePluginManager(): FakePluginManager {
+  const calls: { id: string; enabled: boolean }[] = []
+  return {
+    calls,
+    async setPluginEnabled(id, enabled) {
+      calls.push({ id, enabled })
+      return { changed: true }
+    },
+  }
+}
+
 export interface FakeContext extends DshHostContext {
   logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> }
   effects: string[]
@@ -83,6 +100,7 @@ export interface FakeContextOptions {
   manager?: DshMcpManager
   tools?: DshToolRegistry
   connection?: DshConnection
+  pluginManager?: DshPluginManagerFace
 }
 
 /** The host context, with only the services a test asked for. */
@@ -90,6 +108,7 @@ export function fakeContext(options: FakeContextOptions = {}): FakeContext {
   const services: Record<string, unknown> = {
     configEditor: options.editor,
     mcpManager: options.manager,
+    pluginManager: options.pluginManager,
     tools: options.tools,
     connection: options.connection,
   }

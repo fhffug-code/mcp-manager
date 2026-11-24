@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: WorkbenchConfig = {
   toolCallTimeoutMs: 60_000,
   probeCacheTtlMs: 30_000,
   resultMaxBytes: 262_144,
-  maxToolSchemas: 64,
+  maxToolSchemas: 200,
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

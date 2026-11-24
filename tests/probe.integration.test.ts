@@ -83,6 +83,17 @@ describe('callServerTool', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'echo: hi' }])
   })
 
+  it('keeps the raw result the server sent, for the page', async () => {
+    const result = await callServerTool(stdio(), options, { tool: 'echo', arguments: { message: 'hi' } })
+    const raw = result.raw as { content: unknown[] }
+    expect(raw.content).toEqual([{ type: 'text', text: 'echo: hi' }])
+  })
+
+  it('cuts a raw result that does not fit the byte budget', async () => {
+    const result = await callServerTool(stdio(), { ...options, resultMaxBytes: 10 }, { tool: 'mixed' })
+    expect(result.raw).toMatchObject({ truncated: true })
+  })
+
   it('reports a tool error as a result rather than a failure', async () => {
     const result = await callServerTool(stdio(), options, { tool: 'fail' })
     expect(result.ok).toBe(true)

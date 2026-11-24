@@ -11,7 +11,13 @@ import {
   type WorkbenchConfig,
 } from './config.js'
 import { PLUGIN_NAME } from './version.js'
-import type { DshConfigEditor, DshHostContext, DshLoaderEntry, DshMcpManager } from './types/dsh.js'
+import type {
+  DshConfigEditor,
+  DshHostContext,
+  DshLoaderEntry,
+  DshMcpManager,
+  DshPluginManagerFace,
+} from './types/dsh.js'
 import type { CallResult, ProbeResult, ProbeSummary, ServerPatch, ServerView } from './types/index.js'
 
 export interface WorkbenchOptions {
@@ -233,10 +239,11 @@ export class Workbench {
 
   async setEnabled(name: string, enabled: boolean): Promise<ServerView> {
     const server = this.require(name)
+    if (server.source === 'profile') return this.setProfileEnabled(server, enabled)
     if (server.source !== 'plugin') {
       throw new WorkbenchFailure(
         'not-editable',
-        `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'}`,
+        `server "${name}" belongs to the MCP manager and cannot be switched here`,
       )
     }
     const current = this.options.config().servers[name]
@@ -246,6 +253,26 @@ export class Workbench {
     else next.enabled = false
     await this.writeServers({ ...this.options.config().servers, [name]: next })
     return this.require(name).view
+  }
+
+  /**
+   * Switch a profile row through the plugin manager, which owns `disabled`.
+   * The row's own config stays where it is; only the entry's enablement changes.
+   */
+  private async setProfileEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
+    const entryId = server.view.entryId
+    if (entryId === undefined) {
+      throw new WorkbenchFailure('not-editable', `server "${server.name}" has no profile entry to switch`)
+    }
+    const manager = this.options.ctx.get<DshPluginManagerFace>('pluginManager')
+    if (manager === undefined) {
+      throw new WorkbenchFailure(
+        'unsupported',
+        'the plugin manager service is not available in this profile, so a profile server cannot be switched here',
+      )
+    }
+    await manager.setPluginEnabled(entryId, enabled)
+    return { ...server.view, enabled }
   }
 
   async restart(name: string): Promise<ServerView> {

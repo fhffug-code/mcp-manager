@@ -96,6 +96,7 @@ interface ViewInput {
   raw?: Record<string, unknown>
   enabled: boolean
   editable: boolean
+  entryId?: string
   readOnlyReason?: ReadOnlyReason
   live?: string
   probe?: ProbeSummary
@@ -117,6 +118,7 @@ function buildView(input: ViewInput): ServerView {
     timeouts: timeoutsOf(spec),
   }
   if (input.readOnlyReason !== undefined) view.readOnlyReason = input.readOnlyReason
+  if (input.entryId !== undefined) view.entryId = input.entryId
   const command = spec?.transport === 'stdio' ? spec.command : stringOf(raw?.['command'])
   if (command !== undefined) view.command = command
   if (spec?.transport === 'stdio' && spec.args !== undefined) view.args = spec.args
@@ -172,6 +174,7 @@ function profileServers(source: InventorySource): ResolvedServer[] {
         raw,
         enabled,
         editable: true,
+        entryId: layer.entry.options.id,
         ...(probe === undefined ? {} : { probe }),
       }),
     })

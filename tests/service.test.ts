@@ -4,7 +4,7 @@ import { WorkbenchFailure } from '../src/failures.js'
 import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
 import { PLUGIN_NAME } from '../src/version.js'
 import { MCP_CLIENT_PLUGIN } from '../src/inventory.js'
-import { entry, fakeContext, fakeEditor, fakeManager } from './helpers/fakes.js'
+import { entry, fakeContext, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
 
 const clientLayer = (id: string, name: string, config: Record<string, unknown>) => ({
   entry: entry({ id, name: MCP_CLIENT_PLUGIN, config }),
@@ -32,6 +32,7 @@ interface Harness {
   workbench: Workbench
   editor: ReturnType<typeof fakeEditor>
   manager: ReturnType<typeof fakeManager>
+  pluginManager: ReturnType<typeof fakePluginManager>
   servers: () => WorkbenchConfig['servers']
 }
 
@@ -42,15 +43,19 @@ function harness(
     manager?: ReturnType<typeof fakeManager>
     editor?: boolean
     managerService?: boolean
+    pluginManager?: ReturnType<typeof fakePluginManager>
+    pluginService?: boolean
   } = {},
 ): Harness {
   let servers = options.servers ?? {}
   const layers = options.layers ?? []
   const editor = fakeEditor(layers)
   const manager = options.manager ?? fakeManager()
+  const pluginManager = options.pluginManager ?? fakePluginManager()
   const ctx = fakeContext({
     ...(options.editor === false ? {} : { editor }),
     ...(options.managerService === false ? {} : { manager }),
+    ...(options.pluginService === false ? {} : { pluginManager }),
   })
   const workbench = new Workbench({
     ctx,
@@ -59,7 +64,7 @@ function harness(
       servers = next
     },
   })
-  return { workbench, editor, manager, servers: () => servers }
+  return { workbench, editor, manager, pluginManager, servers: () => servers }
 }
 
 const profileRow = {
@@ -265,10 +270,29 @@ describe('plugin writes', () => {
     expect(manager.registered.has('mine')).toBe(true)
   })
 
-  it('refuses to enable a server the profile or the manager owns', async () => {
+  it('switches a profile row through the plugin manager', async () => {
+    const pluginManager = fakePluginManager()
+    const { workbench } = harness({ pluginManager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
+    const off = await workbench.setEnabled('a', false)
+    expect(off.enabled).toBe(false)
+    expect(off.entryId).toBe('mcp-a')
+
+    const on = await workbench.setEnabled('a', true)
+    expect(on.enabled).toBe(true)
+    expect(pluginManager.calls).toEqual([
+      { id: 'mcp-a', enabled: false },
+      { id: 'mcp-a', enabled: true },
+    ])
+  })
+
+  it('refuses to switch a profile row without a plugin manager', async () => {
+    const { workbench } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow)], pluginService: false })
+    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('unsupported')
+  })
+
+  it('refuses to switch a server the manager owns', async () => {
     const manager = fakeManager([{ name: 'external', configured: true, status: { state: 'ready' } }])
     const { workbench } = harness({ manager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
-    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('not-editable')
     expect(await failureCode(() => workbench.setEnabled('external', false))).toBe('not-editable')
   })
 })

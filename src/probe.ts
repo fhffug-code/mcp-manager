@@ -221,6 +221,18 @@ function normalizeContent(
   return { content, truncated: false }
 }
 
+/** The raw result, kept whole while it fits the budget and otherwise cut down to it. */
+function boundedRaw(value: unknown, maxBytes: number): unknown {
+  let text: string
+  try {
+    text = JSON.stringify(value) ?? 'null'
+  } catch {
+    return { unavailable: 'the result could not be serialised' }
+  }
+  if (text.length <= maxBytes) return value
+  return { truncated: true, bytes: text.length, text: text.slice(0, maxBytes) }
+}
+
 const failedProbe = (probedAt: string, durationMs: number, error: ProbeError): ProbeResult => ({
   ok: false,
   toolCount: 0,
@@ -323,6 +335,7 @@ export async function callServerTool(
         isError: called.isError === true,
         truncated: normalized.truncated,
         durationMs: Date.now() - started,
+        raw: boundedRaw(called, options.resultMaxBytes),
       }
     })
   } catch (error) {
