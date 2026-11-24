@@ -51,3 +51,85 @@ jobs:
 
       - name: Verify the bundle manifest and artifacts
         run: npm run verify:bundle
+
+  sources:
+    name: Check where the pull request comes from
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only a release or a hotfix branch may reach main
+        if: github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            release/*|hotfix/*) echo "$HEAD_REF may reach main" ;;
+            *)
+              echo "::error::$HEAD_REF must be merged through a release/* or hotfix/* branch, not straight into main"
+              exit 1
+              ;;
+          esac
+
+      - name: develop only takes features, releases, hotfixes and back-merges
+        if: github.base_ref == 'develop'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            feature/*|release/*|hotfix/*|dependabot/*) echo "$HEAD_REF may reach develop" ;;
+            main) echo "a back-merge from main may reach develop" ;;
+            *)
+              echo "::error::$HEAD_REF must be a feature/*, release/*, hotfix/* or dependabot/* branch"
+              exit 1
+              ;;
+          esac
+
+  commits:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/check-commits.mjs
+
+  gate:
+    name: Check
+    if: always()
+    needs: [verify, sources, commits]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the jobs this branch needed
+        env:
+          VERIFY: ${{ needs.verify.result }}
+          SOURCES: ${{ needs.sources.result }}
+          COMMITS: ${{ needs.commits.result }}
+        run: |
+          echo "Verify on Node 22: $VERIFY"
+          echo "Check where the pull request comes from: $SOURCES"
+          echo "Commit messages: $COMMITS"
+          case "$VERIFY $COMMITS" in
+            "success success") ;;
+            *)
+              echo "::error::the verification or the commit-message check did not succeed"
+              exit 1
+              ;;
+          esac
+          case "$SOURCES" in
+            success|skipped) ;;
+            *)
+              echo "::error::the branch-source check did not succeed"
+              exit 1
+              ;;
+          esac
