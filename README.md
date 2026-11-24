@@ -132,7 +132,8 @@ The layout:
 - `src/client/` — the Settings tab.
 - `tests/` — the suite, including `tests/fixtures/stdio-server.mjs`.
 
-Branches follow Git Flow: see [docs/GITFLOW.md](docs/GITFLOW.md). Changes are logged in [CHANGELOG.md](CHANGELOG.md).
+`main` is the development line and `release/<minor>` branches hold a version being stabilised: see
+[docs/GITFLOW.md](docs/GITFLOW.md). Changes are logged in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
