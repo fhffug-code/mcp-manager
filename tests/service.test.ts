@@ -271,8 +271,13 @@ describe('plugin writes', () => {
   })
 
   it('switches a profile row through the plugin manager', async () => {
-    const pluginManager = fakePluginManager()
-    const { workbench } = harness({ pluginManager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
+    const layer = clientLayer('mcp-a', 'a', profileRow)
+    const pluginManager = fakePluginManager({
+      apply: (id, enabled) => {
+        if (id === 'mcp-a') layer.entry.options.disabled = !enabled
+      },
+    })
+    const { workbench } = harness({ pluginManager, layers: [layer] })
     const off = await workbench.setEnabled('a', false)
     expect(off.enabled).toBe(false)
     expect(off.entryId).toBe('mcp-a')
@@ -285,17 +290,26 @@ describe('plugin writes', () => {
     ])
   })
 
+  it('refuses a switch the plugin manager could not apply', async () => {
+    const pluginManager = fakePluginManager({ application: 'overridden' })
+    const { workbench } = harness({ pluginManager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
+    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('overridden')
+    expect(pluginManager.calls).toEqual([{ id: 'mcp-a', enabled: false }])
+  })
+
   it('drops the cached probe when a profile row is switched', async () => {
-    const { workbench } = harness({
-      layers: [
-        clientLayer('mcp-a', 'a', {
-          serverName: 'a',
-          transport: 'stdio',
-          command: 'node',
-          env: { KEY: '${credential:KEY}' },
-        }),
-      ],
+    const layer = clientLayer('mcp-a', 'a', {
+      serverName: 'a',
+      transport: 'stdio',
+      command: 'node',
+      env: { KEY: '${credential:KEY}' },
     })
+    const pluginManager = fakePluginManager({
+      apply: (id, enabled) => {
+        if (id === 'mcp-a') layer.entry.options.disabled = !enabled
+      },
+    })
+    const { workbench } = harness({ pluginManager, layers: [layer] })
     const before = await workbench.probe('a')
     expect(before).toMatchObject({ ok: false, error: { stage: 'credential' } })
     await workbench.setEnabled('a', false)

@@ -78,14 +78,22 @@ export interface FakePluginManager extends DshPluginManagerFace {
   calls: { id: string; enabled: boolean }[]
 }
 
+export interface FakePluginManagerOptions {
+  /** What the profile does with the switch, as the real manager would: flip the row's `disabled`. */
+  apply?: (id: string, enabled: boolean) => void
+  /** The runtime outcome the manager reports. */
+  application?: string
+}
+
 /** The profile manager, recording which entry each switch targeted. */
-export function fakePluginManager(): FakePluginManager {
+export function fakePluginManager(options: FakePluginManagerOptions = {}): FakePluginManager {
   const calls: { id: string; enabled: boolean }[] = []
   return {
     calls,
     async setPluginEnabled(id, enabled) {
       calls.push({ id, enabled })
-      return { changed: true }
+      options.apply?.(id, enabled)
+      return { changed: true, ...(options.application === undefined ? {} : { application: options.application }) }
     },
   }
 }

@@ -257,7 +257,9 @@ export class Workbench {
 
   /**
    * Switch a profile row through the plugin manager, which owns `disabled`.
-   * The row's own config stays where it is; only the entry's enablement changes.
+   * The row's own config stays where it is; only the entry's enablement changes. A profile patch
+   * cannot override a row it inserts in the same layer, so the manager reports that row as
+   * `overridden`, and the switch is refused instead of being reported as done.
    */
   private async setProfileEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
     const entryId = server.view.entryId
@@ -271,10 +273,22 @@ export class Workbench {
         'the plugin manager service is not available in this profile, so a profile server cannot be switched here',
       )
     }
-    await manager.setPluginEnabled(entryId, enabled)
-    // Switching a server changes the tool set, so the cached probe no longer describes it.
-    this.probes.delete(server.name)
-    return { ...server.view, enabled }
+    const outcome = applicationOf(await manager.setPluginEnabled(entryId, enabled))
+    if (outcome !== 'overridden' && (await this.awaitEnabled(server.name, enabled))) {
+      // Switching a server changes the tool set, so the cached probe no longer describes it.
+      this.probes.delete(server.name)
+      return this.require(server.name).view
+    }
+    throw new WorkbenchFailure('overridden', switchRefusal(entryId, outcome, enabled))
+  }
+
+  /** Wait for a switch to reach the composition; a live reload lands a moment after the write. */
+  private async awaitEnabled(name: string, enabled: boolean): Promise<boolean> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (this.list().find((view) => view.name === name)?.enabled === enabled) return true
+    }
+    return false
   }
 
   async restart(name: string): Promise<ServerView> {
@@ -370,3 +384,22 @@ export class Workbench {
 /** Read the transport fields of a stored spec for display. */
 export const transportOfSpec = (spec: McpServerSpec | undefined): ServerView['transport'] =>
   spec?.transport ?? 'streamable-http'
+
+/** Read the runtime outcome out of a plugin-manager change result. */
+function applicationOf(result: unknown): string | undefined {
+  if (typeof result !== 'object' || result === null) return undefined
+  const application = (result as { application?: unknown }).application
+  return typeof application === 'string' ? application : undefined
+}
+
+/** Explain a switch that the plugin manager could not apply. */
+function switchRefusal(entryId: string, outcome: string | undefined, enabled: boolean): string {
+  const wanted = enabled ? 'enabled' : 'disabled'
+  if (outcome === 'restart-required') {
+    return `"${entryId}" is saved as ${wanted}, but this profile applies that change on restart`
+  }
+  if (outcome === 'overridden') {
+    return `"${entryId}" is inserted by this profile's patch, and a patch cannot override a row it inserts, so the server cannot be switched from here; change "disabled" on that row in the profile patch instead`
+  }
+  return `"${entryId}" did not become ${wanted}; this profile's patch inserts the row, so the plugin manager cannot override it from here`
+}
