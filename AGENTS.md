@@ -200,7 +200,10 @@ release 线也带上这个修复。
 - A `managed` server lives in the `servers` map of a profile row named
   `@deepseek-ai/dsh-mcp-manager`; there `enabled` is an ordinary field, so switching it is an ordinary
   config write. Moving a statically declared `mcp-client` row into that map is the only way to switch a
-  server the profile already declares — a plugin cannot delete or re-enable an `insert:` row.
+  server the profile already declares — a plugin cannot delete or re-enable an `insert:` row. Keep
+  `!!js` out of that map: its schema holds `env`/`headers` to strings, so `configEditor.edit()` fails
+  validation on the marker; `expressionPath()` refuses the write first and names the path. A secret
+  there belongs in the credential store as `${credential:<name>}`.
 - `install_bundle` can fail once with `EPERM … rename package.json.<digits>`; an identical retry succeeds.
 - esbuild's postinstall is blocked under the bundled npm, but its JS API works — `scripts/build-client.mjs`
   uses it. Never call `npx esbuild`.

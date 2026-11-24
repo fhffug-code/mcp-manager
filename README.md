@@ -69,12 +69,18 @@ what makes it switchable:
         command: 'D:/Program Files/DeepSeek Harness/github-mcp-server.exe'
         args: [stdio]
         env:
-          GITHUB_PERSONAL_ACCESS_TOKEN: !!js process.env.GITHUB_PERSONAL_ACCESS_TOKEN
+          GITHUB_PERSONAL_ACCESS_TOKEN: '${credential:github-token}'
 ```
 
 The map key is the server name, and the tool prefix (`mcp__<name>__`) stays the same. A profile
 patch replaces the whole config of the row it names, so this row must list every server the fleet
 should run.
+
+Every value in that map is data: the row's schema holds `env` and `headers` to strings, so a `!!js`
+expression inside it cannot be written back — this page refuses the change and names the path,
+because validating the marker as data is what the config editor does. Keep a secret in the
+credential store and write `${credential:<name>}`, which the manager resolves when it starts the
+server, or write a literal.
 
 A row the patch mounts inside an `insert:` group is edited by writing a top-level row that
 carries the whole configuration, because that is the row `configEditor.edit()` can address;
