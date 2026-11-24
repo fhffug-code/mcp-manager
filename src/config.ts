@@ -4,9 +4,6 @@ import type { TransportKind } from './types/index.js'
 /** The MCP server name shape both dsh-mcp-client and dsh-mcp-manager require. */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 
-/** Errors a `fetch` may call its own; every reported failure is one of these. */
-export const TRANSPORTS: readonly TransportKind[] = ['stdio', 'streamable-http']
-
 /** One server this bundle registers with the MCP manager. */
 export interface McpServerSpec {
   transport: TransportKind
