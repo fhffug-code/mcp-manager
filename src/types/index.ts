@@ -2,7 +2,7 @@
 
 export type TransportKind = 'stdio' | 'streamable-http'
 
-export type ServerSource = 'profile' | 'plugin' | 'manager'
+export type ServerSource = 'profile' | 'managed' | 'plugin' | 'manager'
 
 export type ReadOnlyReason = 'overridden' | 'unaddressable' | 'manager' | 'unsupported' | 'config-editor-unavailable'
 

@@ -20,6 +20,9 @@ import type {
 } from './types/dsh.js'
 import type { CallResult, ProbeResult, ProbeSummary, ServerPatch, ServerView } from './types/index.js'
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
 export interface WorkbenchOptions {
   ctx: DshHostContext
   config(): WorkbenchConfig
@@ -168,8 +171,36 @@ export class Workbench {
   async save(name: string, patch: ServerPatch): Promise<ServerDetail> {
     const server = this.require(name)
     if (server.source === 'profile') return this.saveProfile(server, patch)
+    if (server.source === 'managed') return this.saveManaged(server, patch)
     if (server.source === 'plugin') return this.savePlugin(server, patch)
     throw new WorkbenchFailure('not-editable', `server "${name}" is owned by the MCP manager and is read-only here`)
+  }
+
+  private async saveManaged(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
+    const base = server.raw ?? ((server.spec ?? {}) as unknown as Record<string, unknown>)
+    const next = applyPatch({ ...base }, patch)
+    const problems = validatePatched(next)
+    if (problems.length > 0) {
+      throw new WorkbenchFailure('invalid-config', problems.join('; '), problems)
+    }
+    await this.writeManaged(server, (servers) => ({ ...servers, [server.name]: next }))
+    return this.detail(server.name)
+  }
+
+  /** Write one server of the profile's manager row, leaving the rest of that map alone. */
+  private async writeManaged(
+    server: ResolvedServer,
+    change: (servers: Record<string, unknown>) => Record<string, unknown>,
+  ): Promise<void> {
+    const entry = server.entry
+    if (entry === undefined) throw new WorkbenchFailure('not-editable', `server "${server.name}" has no manager row`)
+    const editor = this.requireEditor()
+    await editor.edit(entry, (current) => {
+      const servers = isRecord(current['servers']) ? current['servers'] : {}
+      return { ...current, servers: change(servers) }
+    })
+    // The fleet is rebuilt from the new map, so a cached probe no longer describes the server.
+    this.probes.delete(server.name)
   }
 
   private async saveProfile(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
@@ -226,6 +257,14 @@ export class Workbench {
 
   async remove(name: string): Promise<void> {
     const server = this.require(name)
+    if (server.source === 'managed') {
+      await this.writeManaged(server, (servers) => {
+        const next = { ...servers }
+        delete next[server.name]
+        return next
+      })
+      return
+    }
     if (server.source !== 'plugin') {
       throw new WorkbenchFailure(
         'not-editable',
@@ -240,6 +279,7 @@ export class Workbench {
   async setEnabled(name: string, enabled: boolean): Promise<ServerView> {
     const server = this.require(name)
     if (server.source === 'profile') return this.setProfileEnabled(server, enabled)
+    if (server.source === 'managed') return this.setManagedEnabled(server, enabled)
     if (server.source !== 'plugin') {
       throw new WorkbenchFailure(
         'not-editable',
@@ -253,6 +293,18 @@ export class Workbench {
     else next.enabled = false
     await this.writeServers({ ...this.options.config().servers, [name]: next })
     return this.require(name).view
+  }
+
+  /** Switch one server of the profile's manager row: `enabled` is an ordinary field of that map. */
+  private async setManagedEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
+    await this.writeManaged(server, (servers) => {
+      const stored = servers[server.name]
+      const next: Record<string, unknown> = isRecord(stored) ? { ...stored } : {}
+      if (enabled) delete next['enabled']
+      else next['enabled'] = false
+      return { ...servers, [server.name]: next }
+    })
+    return this.require(server.name).view
   }
 
   /**

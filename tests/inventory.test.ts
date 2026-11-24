@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MCP_CLIENT_PLUGIN, findServer, readInventory, specFromRecord } from '../src/inventory.js'
+import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN, findServer, readInventory, specFromRecord } from '../src/inventory.js'
 import type { DshConfigLayer } from '../src/types/dsh.js'
 import type { ProbeSummary } from '../src/types/index.js'
 import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
@@ -245,5 +245,51 @@ describe('readInventory', () => {
   it('finds a server by name', () => {
     const layers = [layer('mcp-a', { serverName: 'a', transport: 'stdio', command: 'node' })]
     expect(findServer(source({ layers }), 'a')?.name).toBe('a')
+  })
+})
+
+describe('managed servers', () => {
+  const managerLayer = (servers: Record<string, unknown>): DshConfigLayer => ({
+    entry: entry({ id: 'mcp-manager', name: MCP_MANAGER_PLUGIN, config: { servers } }),
+    inherited: { servers },
+  })
+
+  it('reads the servers the profile gives to the manager', () => {
+    const servers = readInventory(
+      source({ layers: [managerLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })] }),
+    )
+    expect(servers).toHaveLength(1)
+    expect(servers[0]).toMatchObject({ name: 'clion', source: 'managed' })
+    expect(servers[0]?.entry?.options.id).toBe('mcp-manager')
+    expect(servers[0]?.view).toMatchObject({
+      source: 'managed',
+      transport: 'streamable-http',
+      url: 'http://127.0.0.1/stream',
+      enabled: true,
+      editable: true,
+      entryId: 'mcp-manager',
+    })
+  })
+
+  it('reports a manager server that is switched off', () => {
+    const servers = readInventory(
+      source({
+        layers: [managerLayer({ clion: { transport: 'stdio', command: 'node', enabled: false } })],
+      }),
+    )
+    expect(servers[0]?.view.enabled).toBe(false)
+  })
+
+  it('keeps a profile row ahead of the same name in the manager map', () => {
+    const servers = readInventory(
+      source({
+        layers: [
+          layer('mcp-a', { serverName: 'a', transport: 'stdio', command: 'node' }),
+          managerLayer({ a: { transport: 'stdio', command: 'other' } }),
+        ],
+      }),
+    )
+    expect(servers).toHaveLength(1)
+    expect(servers[0]?.source).toBe('profile')
   })
 })

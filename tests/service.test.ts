@@ -3,7 +3,7 @@ import { Workbench, transportOfSpec } from '../src/service.js'
 import { WorkbenchFailure } from '../src/failures.js'
 import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
 import { PLUGIN_NAME } from '../src/version.js'
-import { MCP_CLIENT_PLUGIN } from '../src/inventory.js'
+import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN } from '../src/inventory.js'
 import { entry, fakeContext, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
 
 const clientLayer = (id: string, name: string, config: Record<string, unknown>) => ({
@@ -16,6 +16,19 @@ const ownLayer = (servers: WorkbenchConfig['servers'] = {}) => ({
   entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers } }),
   inherited: {},
 })
+
+const managedLayer = (servers: Record<string, unknown>) => ({
+  entry: entry({ id: 'mcp-manager', name: MCP_MANAGER_PLUGIN, config: { servers } }),
+  inherited: {},
+})
+
+/** The manager map a layer holds right now, after whichever edit the service made. */
+const recordsOf = (layer: ReturnType<typeof managedLayer>): Record<string, unknown> => {
+  const stored = layer.entry.options.config?.['servers']
+  return typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+    ? (stored as Record<string, unknown>)
+    : {}
+}
 
 /** The failure code an operation refused with, so each test asserts the reason rather than the wording. */
 async function failureCode(run: () => Promise<unknown>): Promise<string> {
@@ -295,6 +308,36 @@ describe('plugin writes', () => {
     const { workbench } = harness({ pluginManager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
     expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('overridden')
     expect(pluginManager.calls).toEqual([{ id: 'mcp-a', enabled: false }])
+  })
+
+  it('switches a server the profile gives to the MCP manager', async () => {
+    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
+    const { workbench } = harness({ layers: [layer] })
+
+    const off = await workbench.setEnabled('clion', false)
+    expect(off).toMatchObject({ name: 'clion', source: 'managed', enabled: false })
+    expect(recordsOf(layer)['clion']).toMatchObject({ enabled: false, url: 'http://127.0.0.1/stream' })
+
+    const on = await workbench.setEnabled('clion', true)
+    expect(on.enabled).toBe(true)
+    expect(recordsOf(layer)['clion']).not.toHaveProperty('enabled')
+  })
+
+  it('edits a server the profile gives to the MCP manager', async () => {
+    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.save('clion', { toolCallTimeoutMs: 5000 })
+    expect(recordsOf(layer)['clion']).toMatchObject({ url: 'http://127.0.0.1/stream', toolCallTimeoutMs: 5000 })
+  })
+
+  it('removes a server the profile gives to the MCP manager', async () => {
+    const layer = managedLayer({
+      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
+      other: { transport: 'stdio', command: 'node' },
+    })
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.remove('clion')
+    expect(Object.keys(recordsOf(layer))).toEqual(['other'])
   })
 
   it('drops the cached probe when a profile row is switched', async () => {

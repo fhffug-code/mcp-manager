@@ -8,6 +8,9 @@ import type { ProbeSummary, ReadOnlyReason, ServerSource, ServerTimeouts, Server
 /** The plugin whose rows the profile mounts as static MCP clients. */
 export const MCP_CLIENT_PLUGIN = '@deepseek-ai/dsh-mcp-client'
 
+/** The fleet plugin whose `servers` map the profile may override. */
+export const MCP_MANAGER_PLUGIN = '@deepseek-ai/dsh-mcp-manager'
+
 /** One server with the place it came from and the effective spec used to connect. */
 export interface ResolvedServer {
   name: string
@@ -182,6 +185,53 @@ function profileServers(source: InventorySource): ResolvedServer[] {
   return resolved
 }
 
+/**
+ * The servers a profile row gives to `@deepseek-ai/dsh-mcp-manager`.
+ * That fleet reads `config.servers`, where `enabled` is an ordinary field, so unlike a row the patch
+ * inserts these servers can be switched at runtime.
+ */
+function managedServers(source: InventorySource): ResolvedServer[] {
+  const editor = source.configEditor()
+  if (editor === undefined) return []
+  const manager = source.mcpManager()
+  const live = new Map<string, string>()
+  for (const view of manager?.list() ?? []) live.set(view.name, stateOf(view.status))
+  const resolved: ResolvedServer[] = []
+  for (const layer of editor.configuration()) {
+    if (layer.entry.options.name !== MCP_MANAGER_PLUGIN) continue
+    const evaluated = layer.entry.options.config ?? {}
+    const raw = rawConfigOf(layer)
+    const records = isRecord(evaluated['servers']) ? evaluated['servers'] : {}
+    const rawRecords = isRecord(raw['servers']) ? raw['servers'] : {}
+    for (const [name, record] of Object.entries(records)) {
+      if (!isRecord(record)) continue
+      const spec = specFromRecord(record)
+      const rawRecord = isRecord(rawRecords[name]) ? (rawRecords[name] as Record<string, unknown>) : undefined
+      const state = live.get(name)
+      const probe = source.probeSummary(name)
+      resolved.push({
+        name,
+        source: 'managed',
+        ...(spec === undefined ? {} : { spec }),
+        entry: layer.entry,
+        ...(rawRecord === undefined ? {} : { raw: rawRecord }),
+        view: buildView({
+          name,
+          source: 'managed',
+          ...(spec === undefined ? {} : { spec }),
+          ...(rawRecord === undefined ? {} : { raw: rawRecord }),
+          enabled: record['enabled'] !== false,
+          editable: true,
+          entryId: layer.entry.options.id,
+          ...(state === undefined ? {} : { live: state }),
+          ...(probe === undefined ? {} : { probe }),
+        }),
+      })
+    }
+  }
+  return resolved
+}
+
 /** The servers this bundle stores in its own config and registers with the manager. */
 function pluginServers(source: InventorySource): ResolvedServer[] {
   const config = source.config()
@@ -241,13 +291,14 @@ function managerServers(source: InventorySource, known: ReadonlySet<string>): Re
   return resolved
 }
 
-/** One consistent picture of the fleet: profile rows first, then this bundle's, then the manager's. */
+/** One consistent picture of the fleet: profile rows, the manager's map, this bundle's, then the rest. */
 export function readInventory(source: InventorySource): ResolvedServer[] {
   const profile = profileServers(source)
-  const claimed = new Set(profile.map((server) => server.name))
+  const managed = managedServers(source).filter((server) => !profile.some((known) => known.name === server.name))
+  const claimed = new Set([...profile, ...managed].map((server) => server.name))
   const plugin = pluginServers(source).filter((server) => !claimed.has(server.name))
   const known = new Set<string>([...claimed, ...plugin.map((server) => server.name)])
-  return [...profile, ...plugin, ...managerServers(source, known)]
+  return [...profile, ...managed, ...plugin, ...managerServers(source, known)]
 }
 
 /** The server with this name, whenever any source mounts one. */
