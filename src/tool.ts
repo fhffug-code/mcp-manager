@@ -19,7 +19,7 @@ const str = (value: unknown): string | undefined => (typeof value === 'string' ?
 const summarize = (value: unknown): string => {
   const text = typeof value === 'string' ? value : JSON.stringify(value, undefined, 2)
   if (text.length <= MAX_TEXT) return text
-  return `${text.slice(0, MAX_TEXT)}\n… truncated; open Settings → Plugins → MCP Workbench for the rest.`
+  return `${text.slice(0, MAX_TEXT)}\n… truncated; open the MCP page in the sidebar for the rest.`
 }
 
 /** A short table of the fleet, so a list answer stays readable. */
@@ -48,7 +48,7 @@ export function definition(workbench: Workbench) {
   return {
     name: TOOL_NAME,
     description:
-      'Inspect, edit, probe and test the MCP servers this profile mounts. Actions: list (all servers and their sources), detail (one server with its last probe), probe (connect once and read the full tool list with input schemas), call (invoke one tool with arguments), save (patch one server), add (create a server this plugin owns), remove (delete a plugin-owned server), setEnabled (enable or disable a plugin-owned server), restart (restart a manager-governed server). Only probe connects to a server; only call, save, add, remove, setEnabled and restart change anything, and each of those needs confirm=true. Settings → Plugins → MCP Workbench offers the same operations.',
+      'Inspect, edit, probe and test the MCP servers this profile mounts. Actions: list (all servers and their sources), detail (one server with its last probe), probe (connect once and read the full tool list with input schemas), call (invoke one tool with arguments), save (patch one server), add (create a server this plugin owns), remove (delete a plugin-owned server), setEnabled (switch a server on or off, whether this plugin owns it or the profile mounts it), restart (restart a manager-governed server). Only probe connects to a server; only call, save, add, remove, setEnabled and restart change anything, and each of those needs confirm=true. The MCP page in the sidebar offers the same operations.',
     parameters: {
       action: {
         type: 'string' as const,
@@ -67,7 +67,10 @@ export function definition(workbench: Workbench) {
         description:
           'Fields to change for save; an omitted field keeps its value and null removes it. env/headers merge by key.',
       },
-      enabled: { type: 'boolean' as const, description: 'New state for setEnabled.' },
+      enabled: {
+        type: 'boolean' as const,
+        description: 'New state for setEnabled; a profile server is switched through the plugin manager.',
+      },
       force: { type: 'boolean' as const, description: 'For probe: ignore the cached result.' },
       confirm: {
         type: 'boolean' as const,
@@ -147,7 +150,7 @@ export function definition(workbench: Workbench) {
 export function registerTool(ctx: DshHostContext, workbench: Workbench): void {
   const tools = ctx.get<DshToolRegistry>('tools')
   if (tools === undefined) {
-    ctx.logger.info('mcp-workbench: no tool registry in this profile; the settings page still works')
+    ctx.logger.info('mcp-workbench: no tool registry in this profile; the MCP page still works')
     return
   }
   ctx.effect(() => {
