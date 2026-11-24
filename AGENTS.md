@@ -192,7 +192,9 @@ release 线也带上这个修复。
   is empty and the raw config arrives in `inherited`. `rawConfigOf()` handles it; a write to such a row
   appends a new top-level override row, and removing the last change removes that row again.
 - `configEditor.edit()` can change a row's `config` only: it cannot insert or delete a row, and it cannot
-  touch `disabled`. Switching a profile row is `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`,
+  touch `disabled`. `pluginManager.setPluginEnabled()` owns `disabled`, but it cannot override a row the
+  same patch layer inserts, so it answers `overridden` for the five `mcp-*` rows: read that answer and
+  report it, never claim a switch the composition did not take. Switching a profile row is `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`,
   where `entryId` is the row's `entry.options.id`.
 - `install_bundle` can fail once with `EPERM … rename package.json.<digits>`; an identical retry succeeds.
 - esbuild's postinstall is blocked under the bundled npm, but its JS API works — `scripts/build-client.mjs`

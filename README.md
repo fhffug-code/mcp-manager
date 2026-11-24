@@ -46,8 +46,9 @@ The bundle stays installed across restarts and belongs to the profile, not to on
 
 A profile row cannot be added or removed here: those are entry options that
 `configEditor.edit()` does not write. It can be switched on and off, because that is what the
-plugin manager writes. A profile row also cannot be restarted, because the manager does not
-govern it. The page says so instead of pretending otherwise.
+plugin manager writes — unless the patch mounts it inside an `insert:` group, which is the one
+case a patch layer cannot override, and then the page reports that refusal instead of pretending
+it switched. A profile row also cannot be restarted, because the manager does not govern it.
 
 A row the patch mounts inside an `insert:` group is edited by writing a top-level row that
 carries the whole configuration, because that is the row `configEditor.edit()` can address;
@@ -79,8 +80,8 @@ failed request, and the page says which one it got.
 
 Switching a server is the profile's own switch: the Host calls `pluginManager.setPluginEnabled`
 for the row, so the state survives a restart and the row's configuration is left alone. The
-server list is read again after the write lands, so the row can never end up showing a state the
-profile does not hold.
+answer is read before anything is claimed: the row is only reported as switched once the
+composition agrees, otherwise the page shows the manager's reason under that row.
 
 The configuration form is a dialog behind the gear:
 

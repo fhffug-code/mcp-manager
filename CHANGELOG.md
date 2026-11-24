@@ -16,7 +16,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - A `mcp_workbench` tool with `list`, `detail`, `probe`, `call`, `save`, `add`, `remove`, `setEnabled` and `restart`; every change needs `confirm: true`.
 - An English and a Chinese locale for the page and the bundle metadata.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
-- A vitest suite of 158 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, and a jsdom test of the page's switch and its bands.
+- A vitest suite of 159 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, and a jsdom test of the page's switch and its bands.
 - GitHub Actions: the verification pipeline, a check that a pull request comes from a branch of the right kind, and a Conventional Commit check.
 
 ### Changed
@@ -29,6 +29,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Fixed
 
 - The switch on a server row looked inert: the click was ignored until the list was re-read, and a re-read taken before the profile write landed put the old state back. The row now shows the new state at once, reconciles with the profile afterwards, and reports a refusal under the row.
+- A switch the plugin manager could not apply was reported as done and then reverted two seconds later. The plugin manager answers `overridden` for a row the profile patch inserts, because a patch layer cannot override a row it inserts itself, so the switch is now refused with that reason and the row keeps its state.
 - A profile row inserted by the patch reported empty `env` and `headers`, because its raw config arrives in the inherited layer while the override stays empty; saving such a row would have written the config without its environment.
 - The page used theme tokens that do not exist, so its text, borders, cards and buttons kept the light palette in dark mode; every colour now comes from a real `--dsw-alias-*` token.
 
