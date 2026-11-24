@@ -9,7 +9,7 @@ A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after 
 - **See every server.** Profile rows (`@deepseek-ai/dsh-mcp-client` entries in the profile patch), the servers this bundle owns, and servers other plugins registered through `mcpManager` appear in one searchable list with their transport, live state, and endpoint.
 - **Switch a server on or off.** A profile row is toggled through the official plugin manager, which rewrites only `disabled` in the profile patch; a server the profile hands to `@deepseek-ai/dsh-mcp-manager` is toggled in that row's `servers` map; a server this bundle owns is toggled in its own row.
 - **Edit in place.** A profile row is edited through `ctx.configEditor.edit()`, so comments and `!!js` expressions survive and the row is validated before it is written. A missing field keeps its stored value, an empty one removes it.
-- **Probe for tools.** The probe opens its own short-lived MCP connection, so it works on a disabled server, does not disturb the connection the agent is using, and returns tool names, descriptions and input schemas with a name and schema budget.
+- **Probe for tools.** The probe keeps its own MCP session per server — opened on first use, reused by later probes and calls, closed when the server is written, restarted or the plugin stops — so it works on a disabled server, does not disturb the connection the agent is using, and returns tool names, descriptions and input schemas with a name and schema budget.
 - **Test a call.** Pick a tool, get its arguments prefilled from the input schema, send them, and read the answer three ways: JSON, a foldable tree, or the raw request and response.
 - **One logic, two surfaces.** The page and the model-facing tool call the same Host service, so both behave the same way.
 
@@ -165,7 +165,7 @@ The row this bundle mounts takes these options:
 
 - **No secret leaves the Host.** Masked values are shown as a presence marker, not as their text, and are written back only when you type a new one.
 - **Credentials stay references.** A `${credential:NAME}` template is never resolved by this plugin: the probe reports it as an unresolved credential instead of reading the credential store.
-- **The probe is a separate connection.** It starts the command or opens the URL itself, with `DSH_*` and secret-shaped environment variables removed, and always closes what it opened.
+- **The probe keeps its own session.** It starts the command or opens the URL itself, with `DSH_*` and secret-shaped environment variables removed, and holds that session between requests instead of opening a new one each time. Writing a server, restarting it or stopping the plugin closes it; a tool call that lost its session is reported rather than replayed, because the server may already have run it.
 - **The route is same-origin only.** `POST /api/mcp-workbench` refuses a request whose `Sec-Fetch-Site` or `Origin` says it came from another page.
 
 ## Development
@@ -188,7 +188,9 @@ The layout:
 - `src/service.ts` — every operation the page and the tool share.
 - `src/route.ts` — the same-origin JSON endpoint.
 - `src/tool.ts` — the model-facing definition.
-- `src/probe.ts` — the throwaway MCP connection used by probe and call.
+- `src/probe.ts` — probing and calling a server over the pool's session.
+- `src/connection.ts` — one live MCP session per server, reused and closed on demand.
+- `src/deadline.ts` — the timeout wrapper shared by both.
 - `src/client/` — the sidebar panel: the page, the tool editor, the schema prefill and the two result views.
 - `tests/` — the suite, including `tests/fixtures/stdio-server.mjs`.
 

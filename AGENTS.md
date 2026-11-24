@@ -154,6 +154,9 @@ release 线也带上这个修复。
   client gets a presence marker. An omitted field keeps its value, `null` deletes it.
 - **One operation, one method.** A capability is a method on `Workbench`, then a route action, then a
   tool row, then a control. The route, the tool and the component hold no logic.
+- **One session per server.** `src/connection.ts` owns the client and the transport of every server the
+  plugin talks to: `probe` and `call` go through `ConnectionPool.use()`, never through a connection of
+  their own, and every write, restart and shutdown closes the session it invalidated.
 - **Every failure has a code.** `WorkbenchFailure` with a `FailureCode`; the route maps it to a status,
   the tool renders `<code>: <message>`.
 - **Style only with real tokens.** Use `--dsw-alias-*` and `--ds-font-family-code`; an invented token
@@ -175,6 +178,8 @@ release 线也带上这个修复。
   保持原值，`null` 表示删除。
 - **一个操作一个方法**：能力先落在 `Workbench` 的方法，然后是路由动作、工具参数行、页面控件；路由、工具和
   组件里不放逻辑。
+- **一个服务器一个会话**：`src/connection.ts` 持有插件要谈话的每个服务器的 client 与 transport；`probe`
+  与 `call` 都经 `ConnectionPool.use()`，绝不自己新建连接；任何写入、重启、停机都要关掉它作废的那个会话。
 - **每个失败都带 code**：`WorkbenchFailure` + `FailureCode`，路由映射成 HTTP 状态，工具渲染成
   `<code>: <message>`。
 - **只用真实 token 写样式**：用 `--dsw-alias-*` 和 `--ds-font-family-code`；编造的 token 会静默回退，
@@ -205,6 +210,9 @@ release 线也带上这个修复。
   validation on the marker; `expressionPath()` refuses the write first and names the path. A secret
   there belongs in the credential store as `${credential:<name>}`.
 - `install_bundle` can fail once with `EPERM … rename package.json.<digits>`; an identical retry succeeds.
+- A live session is not replayed. `ConnectionPool.use()` drops a dead session and retries only when
+  `retryOnDisconnect` is set: `probe` sets it, a `tools/call` does not, because the server may already
+  have run the call. Close the session of any server you rewrote — the service already does.
 - esbuild's postinstall is blocked under the bundled npm, but its JS API works — `scripts/build-client.mjs`
   uses it. Never call `npx esbuild`.
 - git prints to stderr, which shows up red in the terminal tool; that is not a failure. One command per
