@@ -280,9 +280,9 @@ export function McpPanel({ t }: PanelProps) {
                         role="switch"
                         aria-checked={enabled}
                         aria-busy={busy}
-                        title={view.editable === false ? t('readOnly') : enabled ? t('disable') : t('enable')}
+                        title={!view.editable ? t('readOnly') : enabled ? t('disable') : t('enable')}
                         aria-label={enabled ? t('disable') : t('enable')}
-                        disabled={view.editable === false}
+                        disabled={!view.editable}
                         onClick={() => void toggle(view)}
                       >
                         <span />
@@ -292,7 +292,7 @@ export function McpPanel({ t }: PanelProps) {
                         className="mcpw-icon"
                         title={t('editServer')}
                         aria-label={t('editServer')}
-                        disabled={view.editable === false}
+                        disabled={!view.editable}
                         onClick={() => setEditor({ mode: 'edit', view })}
                       >
                         ⚙
