@@ -56,22 +56,31 @@ removes that row again, so the file returns to what it held before.
 
 ## The page
 
-Three columns, each with its own search box where it lists things:
+One page of nested bands, each separated from the next by a hairline: a third for the servers,
+the rest split again a third to the tools and two thirds to the tool itself.
 
-- **Servers.** Every server the profile mounts, with its source, transport and state. The dot
-  switches it on or off; the gear opens its configuration. The search filters by name, source
-  and endpoint.
-- **Tools.** Pick a server and press **Test connection**: the probe connects once and the
-  button moves to the top of the tool list it produced. Each row shows the tool name and two
-  lines of its description; the search filters on both.
-- **One tool.** The upper half is the tool's description, the lower half is a test call that
-  takes as much room as the window allows. The arguments are prefilled from the tool's input
-  schema (`default`, then `examples[0]`, then the first `enum` member, then an empty value of
-  the right type), and stay editable as JSON.
+- **Servers** (the left third). Every server the profile mounts, with its source, transport and
+  state. The switch on the right of a row turns it on or off and shows the new state as soon as
+  you click it; the gear opens its configuration. The search filters by name, source and
+  endpoint. A refusal appears under the row that refused, not only at the top of the page.
+- **Tool bar** (top of the right side). **Test connection** on the start, the tool search on the
+  end. The probe connects once, and the button becomes **Test again**; the summary beside it
+  reports the tool count or why the connection failed.
+- **Tools** (a third of the right side). Each row shows the tool name and two lines of its
+  description; the search filters on both.
+- **One tool** (two thirds of the right side, split again). The upper third is the description,
+  the lower third the test call, which takes whatever height is left. The arguments are
+  prefilled from the tool's input schema (`default`, then `examples[0]`, then the first `enum`
+  member, then an empty value of the right type), and stay editable as JSON.
 
 Press **Send** and read the answer as **JSON**, as a **Tree** of foldable nodes, or as the
 **Raw** request and response pair. A tool that reports `isError` is still a result, not a
 failed request, and the page says which one it got.
+
+Switching a server is the profile's own switch: the Host calls `pluginManager.setPluginEnabled`
+for the row, so the state survives a restart and the row's configuration is left alone. The
+server list is read again after the write lands, so the row can never end up showing a state the
+profile does not hold.
 
 The configuration form is a dialog behind the gear:
 
