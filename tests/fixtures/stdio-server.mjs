@@ -25,6 +25,11 @@ const TOOLS = [
     description: 'Answers one block of every content kind',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
+  {
+    name: 'pid',
+    description: 'Report the process that serves this session',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
 ]
 
 const write = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -67,6 +72,10 @@ function handle(message) {
           ],
           isError: false,
         })
+      }
+      if (params?.name === 'pid') {
+        // Proves two calls landed on one session: the same process answers both.
+        return result(id, { content: [{ type: 'text', text: String(process.pid) }], isError: false })
       }
       return failure(id, -32602, `unknown tool ${String(params?.name)}`)
     }

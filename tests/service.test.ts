@@ -5,6 +5,26 @@ import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
 import { PLUGIN_NAME } from '../src/version.js'
 import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN } from '../src/inventory.js'
 import { entry, fakeContext, fakeCredentials, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
+import type { ConnectionPool } from '../src/connection.js'
+
+/** A pool that records what the service asked it to close, without opening anything. */
+function fakeConnections(): { pool: ConnectionPool; closed: string[] } {
+  const closed: string[] = []
+  const pool = {
+    size: (): number => 0,
+    has: (): boolean => false,
+    use: async (): Promise<never> => {
+      throw new Error('these tests never open a session')
+    },
+    close: async (name: string): Promise<void> => {
+      closed.push(name)
+    },
+    closeAll: async (): Promise<void> => {
+      closed.push('*')
+    },
+  }
+  return { pool: pool as unknown as ConnectionPool, closed }
+}
 
 const clientLayer = (id: string, name: string, config: Record<string, unknown>) => ({
   entry: entry({ id, name: MCP_CLIENT_PLUGIN, config }),
@@ -59,6 +79,7 @@ function harness(
     pluginManager?: ReturnType<typeof fakePluginManager>
     pluginService?: boolean
     credentials?: ReturnType<typeof fakeCredentials>
+    connections?: ConnectionPool
   } = {},
 ): Harness {
   let servers = options.servers ?? {}
@@ -78,6 +99,7 @@ function harness(
     applyServers: (next) => {
       servers = next
     },
+    connections: options.connections ?? fakeConnections().pool,
   })
   return { workbench, editor, manager, pluginManager, servers: () => servers }
 }
@@ -470,6 +492,48 @@ describe('lifecycle', () => {
   it('does nothing without a manager', () => {
     const { workbench } = harness({ managerService: false, servers: { a: { transport: 'stdio', command: 'node' } } })
     expect(() => workbench.syncRegistrations()).not.toThrow()
+  })
+
+  it('hands every live session back when it stops', () => {
+    const connections = fakeConnections()
+    const manager = fakeManager()
+    const { workbench } = harness({
+      manager,
+      connections: connections.pool,
+      servers: { a: { transport: 'stdio', command: 'node' } },
+    })
+    const stop = workbench.start()
+    stop()
+    expect(connections.closed).toEqual(['*'])
+  })
+})
+
+describe('live sessions', () => {
+  it('closes the session of a plugin server it just wrote', async () => {
+    const connections = fakeConnections()
+    const { workbench } = harness({
+      connections: connections.pool,
+      layers: [ownLayer({ a: { transport: 'stdio', command: 'node' } })],
+      servers: { a: { transport: 'stdio', command: 'node' } },
+    })
+    await workbench.save('a', { toolCallTimeoutMs: 9_000 })
+    expect(connections.closed).toEqual(['a'])
+  })
+
+  it('closes the session of a managed server it just switched', async () => {
+    const connections = fakeConnections()
+    const layer = managedLayer({ a: { transport: 'stdio', command: 'node' } })
+    const { workbench } = harness({ connections: connections.pool, layers: [layer] })
+    await workbench.setEnabled('a', false)
+    expect(connections.closed).toEqual(['a'])
+  })
+
+  it('closes the session it restarted', async () => {
+    const connections = fakeConnections()
+    const manager = fakeManager([{ name: 'external', configured: true, status: { state: 'ready' } }])
+    const { workbench } = harness({ connections: connections.pool, manager })
+    await workbench.restart('external')
+    expect(connections.closed).toEqual(['external'])
   })
 })
 
