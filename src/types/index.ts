@@ -2,7 +2,7 @@
 
 export type TransportKind = 'stdio' | 'streamable-http'
 
-export type ServerSource = 'profile' | 'plugin' | 'manager'
+export type ServerSource = 'profile' | 'managed' | 'plugin' | 'manager'
 
 export type ReadOnlyReason = 'overridden' | 'unaddressable' | 'manager' | 'unsupported' | 'config-editor-unavailable'
 
@@ -29,6 +29,8 @@ export interface ServerView {
   endpoint: string
   enabled: boolean
   editable: boolean
+  /** The profile entry id, so a switch can target the row the profile mounts. */
+  entryId?: string
   readOnlyReason?: ReadOnlyReason
   command?: string
   args?: string[]
@@ -91,6 +93,8 @@ export interface CallResult {
   isError: boolean
   truncated: boolean
   durationMs: number
+  /** The raw `tools/call` result as the server sent it, cut to the byte budget. */
+  raw?: unknown
   error?: ProbeError
 }
 

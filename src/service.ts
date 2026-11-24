@@ -1,5 +1,5 @@
 /** Every operation, implemented once; the settings page and the model tool both call this. */
-import { applyPatch, validatePatched } from './edit.js'
+import { applyPatch, expressionPath, validatePatched } from './edit.js'
 import { WorkbenchFailure } from './failures.js'
 import { readInventory, type InventorySource, type ResolvedServer } from './inventory.js'
 import { callServerTool, probeServer } from './probe.js'
@@ -11,8 +11,18 @@ import {
   type WorkbenchConfig,
 } from './config.js'
 import { PLUGIN_NAME } from './version.js'
-import type { DshConfigEditor, DshHostContext, DshLoaderEntry, DshMcpManager } from './types/dsh.js'
+import type {
+  DshConfigEditor,
+  DshCredentialsFace,
+  DshHostContext,
+  DshLoaderEntry,
+  DshMcpManager,
+  DshPluginManagerFace,
+} from './types/dsh.js'
 import type { CallResult, ProbeResult, ProbeSummary, ServerPatch, ServerView } from './types/index.js'
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
 
 export interface WorkbenchOptions {
   ctx: DshHostContext
@@ -105,6 +115,19 @@ export class Workbench {
 
   // -- probes and calls --------------------------------------------------------
 
+  /**
+   * The value behind a `${credential:NAME}` reference.
+   *
+   * The store layers its own keys over the launching environment, exactly as the manager does when it
+   * connects; an absent service means every reference stays unresolved.
+   */
+  private async resolveCredential(name: string): Promise<string | undefined> {
+    const credentials = this.options.ctx.get<DshCredentialsFace>('credentials')
+    if (credentials === undefined) return undefined
+    const hit = await credentials.resolve(name)
+    return hit?.value
+  }
+
   async probe(name: string, options: { force?: boolean } = {}, signal?: AbortSignal): Promise<ProbeResult> {
     const server = this.require(name)
     if (server.spec === undefined) {
@@ -122,6 +145,7 @@ export class Workbench {
       toolCallTimeoutMs: config.toolCallTimeoutMs,
       maxToolSchemas: config.maxToolSchemas,
       resultMaxBytes: config.resultMaxBytes,
+      credentials: (credential: string) => this.resolveCredential(credential),
     }
     const spec = server.spec
     const work = probeServer(spec, budgets, signal).then((result) => {
@@ -150,6 +174,7 @@ export class Workbench {
         toolCallTimeoutMs: config.toolCallTimeoutMs,
         maxToolSchemas: config.maxToolSchemas,
         resultMaxBytes: config.resultMaxBytes,
+        credentials: (credential: string) => this.resolveCredential(credential),
       },
       request,
       signal,
@@ -162,8 +187,43 @@ export class Workbench {
   async save(name: string, patch: ServerPatch): Promise<ServerDetail> {
     const server = this.require(name)
     if (server.source === 'profile') return this.saveProfile(server, patch)
+    if (server.source === 'managed') return this.saveManaged(server, patch)
     if (server.source === 'plugin') return this.savePlugin(server, patch)
     throw new WorkbenchFailure('not-editable', `server "${name}" is owned by the MCP manager and is read-only here`)
+  }
+
+  private async saveManaged(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
+    const base = server.raw ?? ((server.spec ?? {}) as unknown as Record<string, unknown>)
+    const next = applyPatch({ ...base }, patch)
+    const problems = validatePatched(next)
+    if (problems.length > 0) {
+      throw new WorkbenchFailure('invalid-config', problems.join('; '), problems)
+    }
+    await this.writeManaged(server, (servers) => ({ ...servers, [server.name]: next }))
+    return this.detail(server.name)
+  }
+
+  /** Write one server of the profile's manager row, leaving the rest of that map alone. */
+  private async writeManaged(
+    server: ResolvedServer,
+    change: (servers: Record<string, unknown>) => Record<string, unknown>,
+  ): Promise<void> {
+    const entry = server.entry
+    if (entry === undefined) throw new WorkbenchFailure('not-editable', `server "${server.name}" has no manager row`)
+    const editor = this.requireEditor()
+    await editor.edit(entry, (current) => {
+      const servers = isRecord(current['servers']) ? current['servers'] : {}
+      const expression = expressionPath(servers, 'servers')
+      if (expression !== undefined) {
+        throw new WorkbenchFailure(
+          'invalid-config',
+          `the manager row keeps a "!!js" expression at ${expression}, and that row's schema only accepts a string there; store the value as a literal or as \${credential:NAME} and this server can be changed here`,
+        )
+      }
+      return { ...current, servers: change(servers) }
+    })
+    // The fleet is rebuilt from the new map, so a cached probe no longer describes the server.
+    this.probes.delete(server.name)
   }
 
   private async saveProfile(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
@@ -220,6 +280,14 @@ export class Workbench {
 
   async remove(name: string): Promise<void> {
     const server = this.require(name)
+    if (server.source === 'managed') {
+      await this.writeManaged(server, (servers) => {
+        const next = { ...servers }
+        delete next[server.name]
+        return next
+      })
+      return
+    }
     if (server.source !== 'plugin') {
       throw new WorkbenchFailure(
         'not-editable',
@@ -233,10 +301,12 @@ export class Workbench {
 
   async setEnabled(name: string, enabled: boolean): Promise<ServerView> {
     const server = this.require(name)
+    if (server.source === 'profile') return this.setProfileEnabled(server, enabled)
+    if (server.source === 'managed') return this.setManagedEnabled(server, enabled)
     if (server.source !== 'plugin') {
       throw new WorkbenchFailure(
         'not-editable',
-        `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'}`,
+        `server "${name}" belongs to the MCP manager and cannot be switched here`,
       )
     }
     const current = this.options.config().servers[name]
@@ -246,6 +316,54 @@ export class Workbench {
     else next.enabled = false
     await this.writeServers({ ...this.options.config().servers, [name]: next })
     return this.require(name).view
+  }
+
+  /** Switch one server of the profile's manager row: `enabled` is an ordinary field of that map. */
+  private async setManagedEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
+    await this.writeManaged(server, (servers) => {
+      const stored = servers[server.name]
+      const next: Record<string, unknown> = isRecord(stored) ? { ...stored } : {}
+      if (enabled) delete next['enabled']
+      else next['enabled'] = false
+      return { ...servers, [server.name]: next }
+    })
+    return this.require(server.name).view
+  }
+
+  /**
+   * Switch a profile row through the plugin manager, which owns `disabled`.
+   * The row's own config stays where it is; only the entry's enablement changes. A profile patch
+   * cannot override a row it inserts in the same layer, so the manager reports that row as
+   * `overridden`, and the switch is refused instead of being reported as done.
+   */
+  private async setProfileEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
+    const entryId = server.view.entryId
+    if (entryId === undefined) {
+      throw new WorkbenchFailure('not-editable', `server "${server.name}" has no profile entry to switch`)
+    }
+    const manager = this.options.ctx.get<DshPluginManagerFace>('pluginManager')
+    if (manager === undefined) {
+      throw new WorkbenchFailure(
+        'unsupported',
+        'the plugin manager service is not available in this profile, so a profile server cannot be switched here',
+      )
+    }
+    const outcome = applicationOf(await manager.setPluginEnabled(entryId, enabled))
+    if (outcome !== 'overridden' && (await this.awaitEnabled(server.name, enabled))) {
+      // Switching a server changes the tool set, so the cached probe no longer describes it.
+      this.probes.delete(server.name)
+      return this.require(server.name).view
+    }
+    throw new WorkbenchFailure('overridden', switchRefusal(entryId, outcome, enabled))
+  }
+
+  /** Wait for a switch to reach the composition; a live reload lands a moment after the write. */
+  private async awaitEnabled(name: string, enabled: boolean): Promise<boolean> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (this.list().find((view) => view.name === name)?.enabled === enabled) return true
+    }
+    return false
   }
 
   async restart(name: string): Promise<ServerView> {
@@ -341,3 +459,22 @@ export class Workbench {
 /** Read the transport fields of a stored spec for display. */
 export const transportOfSpec = (spec: McpServerSpec | undefined): ServerView['transport'] =>
   spec?.transport ?? 'streamable-http'
+
+/** Read the runtime outcome out of a plugin-manager change result. */
+function applicationOf(result: unknown): string | undefined {
+  if (typeof result !== 'object' || result === null) return undefined
+  const application = (result as { application?: unknown }).application
+  return typeof application === 'string' ? application : undefined
+}
+
+/** Explain a switch that the plugin manager could not apply. */
+function switchRefusal(entryId: string, outcome: string | undefined, enabled: boolean): string {
+  const wanted = enabled ? 'enabled' : 'disabled'
+  if (outcome === 'restart-required') {
+    return `"${entryId}" is saved as ${wanted}, but this profile applies that change on restart`
+  }
+  if (outcome === 'overridden') {
+    return `"${entryId}" is inserted by this profile's patch, and a patch cannot override a row it inserts, so the server cannot be switched from here; change "disabled" on that row in the profile patch instead`
+  }
+  return `"${entryId}" did not become ${wanted}; this profile's patch inserts the row, so the plugin manager cannot override it from here`
+}

@@ -20,7 +20,7 @@ describe('definition', () => {
       output: { schema: { type: string } }
     }
     expect(tool.name).toBe(TOOL_NAME)
-    expect(tool.description).toContain('Settings → Plugins → MCP Workbench')
+    expect(tool.description).toContain('The MCP page in the sidebar')
     expect(tool.parameters['action']).toMatchObject({ type: 'string', required: true })
     expect(tool.parameters['confirm']).toMatchObject({ type: 'boolean' })
     expect(tool.output.schema).toEqual({ type: 'string' })
@@ -186,7 +186,7 @@ describe('the actions that report a result', () => {
       name: 'a',
     })
     expect(answer.length).toBeLessThan(8_100)
-    expect(answer.endsWith('… truncated; open Settings → Plugins → MCP Workbench for the rest.')).toBe(true)
+    expect(answer.endsWith('… truncated; open the MCP page in the sidebar for the rest.')).toBe(true)
   })
 })
 
@@ -204,7 +204,7 @@ describe('registerTool', () => {
     const ctx = fakeContext()
     registerTool(ctx, { list: () => [] } as unknown as Workbench)
     expect(ctx.logger.info).toHaveBeenCalledWith(
-      'mcp-workbench: no tool registry in this profile; the settings page still works',
+      'mcp-workbench: no tool registry in this profile; the MCP page still works',
     )
     expect(ctx.effects).toEqual([])
   })

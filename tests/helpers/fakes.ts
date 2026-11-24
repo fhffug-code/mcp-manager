@@ -4,10 +4,12 @@ import type {
   DshConfigEditor,
   DshConfigLayer,
   DshConnection,
+  DshCredentialsFace,
   DshHostContext,
   DshLoaderEntry,
   DshManagedServerView,
   DshMcpManager,
+  DshPluginManagerFace,
   DshToolRegistry,
 } from '../../src/types/dsh.js'
 
@@ -73,6 +75,47 @@ export function fakeManager(views: DshManagedServerView[] = []): FakeManager {
   }
 }
 
+export interface FakePluginManager extends DshPluginManagerFace {
+  calls: { id: string; enabled: boolean }[]
+}
+
+export interface FakePluginManagerOptions {
+  /** What the profile does with the switch, as the real manager would: flip the row's `disabled`. */
+  apply?: (id: string, enabled: boolean) => void
+  /** The runtime outcome the manager reports. */
+  application?: string
+}
+
+/** The profile manager, recording which entry each switch targeted. */
+export function fakePluginManager(options: FakePluginManagerOptions = {}): FakePluginManager {
+  const calls: { id: string; enabled: boolean }[] = []
+  return {
+    calls,
+    async setPluginEnabled(id, enabled) {
+      calls.push({ id, enabled })
+      options.apply?.(id, enabled)
+      return { changed: true, ...(options.application === undefined ? {} : { application: options.application }) }
+    },
+  }
+}
+
+export interface FakeCredentials extends DshCredentialsFace {
+  asked: string[]
+}
+
+/** The credential store, holding the values a test hands it. */
+export function fakeCredentials(values: Record<string, string> = {}): FakeCredentials {
+  const asked: string[] = []
+  return {
+    asked,
+    async resolve(ref) {
+      asked.push(ref)
+      const value = values[ref]
+      return value === undefined ? undefined : { value }
+    },
+  }
+}
+
 export interface FakeContext extends DshHostContext {
   logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> }
   effects: string[]
@@ -83,6 +126,8 @@ export interface FakeContextOptions {
   manager?: DshMcpManager
   tools?: DshToolRegistry
   connection?: DshConnection
+  pluginManager?: DshPluginManagerFace
+  credentials?: DshCredentialsFace
 }
 
 /** The host context, with only the services a test asked for. */
@@ -90,6 +135,8 @@ export function fakeContext(options: FakeContextOptions = {}): FakeContext {
   const services: Record<string, unknown> = {
     configEditor: options.editor,
     mcpManager: options.manager,
+    pluginManager: options.pluginManager,
+    credentials: options.credentials,
     tools: options.tools,
     connection: options.connection,
   }

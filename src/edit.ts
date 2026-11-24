@@ -17,6 +17,28 @@ function expressionOf(value: unknown): string | undefined {
   return typeof expression === 'string' ? expression : undefined
 }
 
+/**
+ * Where the first `!!js` expression sits inside a config value, as a dotted path.
+ * A row that keeps one anywhere cannot be rewritten: its schema validates the marker as data, not as an expression.
+ */
+export function expressionPath(value: unknown, prefix = ''): string | undefined {
+  if (expressionOf(value) !== undefined) return prefix === '' ? 'the value' : prefix
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const found = expressionPath(item, `${prefix}[${index}]`)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  if (isRecord(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      const found = expressionPath(item, prefix === '' ? key : `${prefix}.${key}`)
+      if (found !== undefined) return found
+    }
+  }
+  return undefined
+}
+
 /** Mask one env or header map for the page: literals where safe, markers where not. */
 export function fieldsOf(raw: unknown): Record<string, ServerField> {
   const fields: Record<string, ServerField> = {}

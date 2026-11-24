@@ -3,8 +3,8 @@ import { Workbench, transportOfSpec } from '../src/service.js'
 import { WorkbenchFailure } from '../src/failures.js'
 import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
 import { PLUGIN_NAME } from '../src/version.js'
-import { MCP_CLIENT_PLUGIN } from '../src/inventory.js'
-import { entry, fakeContext, fakeEditor, fakeManager } from './helpers/fakes.js'
+import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN } from '../src/inventory.js'
+import { entry, fakeContext, fakeCredentials, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
 
 const clientLayer = (id: string, name: string, config: Record<string, unknown>) => ({
   entry: entry({ id, name: MCP_CLIENT_PLUGIN, config }),
@@ -16,6 +16,19 @@ const ownLayer = (servers: WorkbenchConfig['servers'] = {}) => ({
   entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers } }),
   inherited: {},
 })
+
+const managedLayer = (servers: Record<string, unknown>) => ({
+  entry: entry({ id: 'mcp-manager', name: MCP_MANAGER_PLUGIN, config: { servers } }),
+  inherited: {},
+})
+
+/** The manager map a layer holds right now, after whichever edit the service made. */
+const recordsOf = (layer: ReturnType<typeof managedLayer>): Record<string, unknown> => {
+  const stored = layer.entry.options.config?.['servers']
+  return typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+    ? (stored as Record<string, unknown>)
+    : {}
+}
 
 /** The failure code an operation refused with, so each test asserts the reason rather than the wording. */
 async function failureCode(run: () => Promise<unknown>): Promise<string> {
@@ -32,6 +45,7 @@ interface Harness {
   workbench: Workbench
   editor: ReturnType<typeof fakeEditor>
   manager: ReturnType<typeof fakeManager>
+  pluginManager: ReturnType<typeof fakePluginManager>
   servers: () => WorkbenchConfig['servers']
 }
 
@@ -42,15 +56,21 @@ function harness(
     manager?: ReturnType<typeof fakeManager>
     editor?: boolean
     managerService?: boolean
+    pluginManager?: ReturnType<typeof fakePluginManager>
+    pluginService?: boolean
+    credentials?: ReturnType<typeof fakeCredentials>
   } = {},
 ): Harness {
   let servers = options.servers ?? {}
   const layers = options.layers ?? []
   const editor = fakeEditor(layers)
   const manager = options.manager ?? fakeManager()
+  const pluginManager = options.pluginManager ?? fakePluginManager()
   const ctx = fakeContext({
     ...(options.editor === false ? {} : { editor }),
     ...(options.managerService === false ? {} : { manager }),
+    ...(options.pluginService === false ? {} : { pluginManager }),
+    ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
   })
   const workbench = new Workbench({
     ctx,
@@ -59,7 +79,7 @@ function harness(
       servers = next
     },
   })
-  return { workbench, editor, manager, servers: () => servers }
+  return { workbench, editor, manager, pluginManager, servers: () => servers }
 }
 
 const profileRow = {
@@ -131,6 +151,28 @@ describe('probe and call', () => {
     })
     const result = await workbench.call('creds', { tool: 'echo' })
     expect(result).toMatchObject({ ok: false, content: [], error: { stage: 'credential' } })
+  })
+
+  it('asks the credential store before it connects', async () => {
+    const credentials = fakeCredentials({ A: 'stored-secret' })
+    const { workbench } = harness({
+      servers: { creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } } },
+      credentials,
+    })
+    const result = await workbench.probe('creds')
+    expect(credentials.asked).toEqual(['A'])
+    expect(result.error?.stage).not.toBe('credential')
+  })
+
+  it('reports a credential the store does not hold', async () => {
+    const credentials = fakeCredentials()
+    const { workbench } = harness({
+      servers: { creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } } },
+      credentials,
+    })
+    const result = await workbench.probe('creds')
+    expect(result).toMatchObject({ ok: false, durationMs: 0, error: { stage: 'credential' } })
+    expect(credentials.asked).toEqual(['A'])
   })
 
   it('refuses a call to a server with no transport', async () => {
@@ -265,10 +307,105 @@ describe('plugin writes', () => {
     expect(manager.registered.has('mine')).toBe(true)
   })
 
-  it('refuses to enable a server the profile or the manager owns', async () => {
+  it('switches a profile row through the plugin manager', async () => {
+    const layer = clientLayer('mcp-a', 'a', profileRow)
+    const pluginManager = fakePluginManager({
+      apply: (id, enabled) => {
+        if (id === 'mcp-a') layer.entry.options.disabled = !enabled
+      },
+    })
+    const { workbench } = harness({ pluginManager, layers: [layer] })
+    const off = await workbench.setEnabled('a', false)
+    expect(off.enabled).toBe(false)
+    expect(off.entryId).toBe('mcp-a')
+
+    const on = await workbench.setEnabled('a', true)
+    expect(on.enabled).toBe(true)
+    expect(pluginManager.calls).toEqual([
+      { id: 'mcp-a', enabled: false },
+      { id: 'mcp-a', enabled: true },
+    ])
+  })
+
+  it('refuses a switch the plugin manager could not apply', async () => {
+    const pluginManager = fakePluginManager({ application: 'overridden' })
+    const { workbench } = harness({ pluginManager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
+    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('overridden')
+    expect(pluginManager.calls).toEqual([{ id: 'mcp-a', enabled: false }])
+  })
+
+  it('switches a server the profile gives to the MCP manager', async () => {
+    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
+    const { workbench } = harness({ layers: [layer] })
+
+    const off = await workbench.setEnabled('clion', false)
+    expect(off).toMatchObject({ name: 'clion', source: 'managed', enabled: false })
+    expect(recordsOf(layer)['clion']).toMatchObject({ enabled: false, url: 'http://127.0.0.1/stream' })
+
+    const on = await workbench.setEnabled('clion', true)
+    expect(on.enabled).toBe(true)
+    expect(recordsOf(layer)['clion']).not.toHaveProperty('enabled')
+  })
+
+  it('edits a server the profile gives to the MCP manager', async () => {
+    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.save('clion', { toolCallTimeoutMs: 5000 })
+    expect(recordsOf(layer)['clion']).toMatchObject({ url: 'http://127.0.0.1/stream', toolCallTimeoutMs: 5000 })
+  })
+
+  it('removes a server the profile gives to the MCP manager', async () => {
+    const layer = managedLayer({
+      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
+      other: { transport: 'stdio', command: 'node' },
+    })
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.remove('clion')
+    expect(Object.keys(recordsOf(layer))).toEqual(['other'])
+  })
+
+  it('refuses to rewrite a manager row that keeps a !!js expression', async () => {
+    const layer = managedLayer({
+      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
+      github: { transport: 'stdio', command: 'node', env: { TOKEN: { __jsExpr: 'process.env.TOKEN' } } },
+    })
+    const { workbench } = harness({ layers: [layer] })
+
+    const error = await workbench.setEnabled('clion', false).catch((thrown: unknown) => thrown)
+    expect(error).toBeInstanceOf(WorkbenchFailure)
+    expect((error as WorkbenchFailure).code).toBe('invalid-config')
+    expect((error as WorkbenchFailure).message).toContain('servers.github.env.TOKEN')
+    expect(recordsOf(layer)['clion']).not.toHaveProperty('enabled')
+    expect(recordsOf(layer)['github']).toMatchObject({ env: { TOKEN: { __jsExpr: 'process.env.TOKEN' } } })
+  })
+
+  it('drops the cached probe when a profile row is switched', async () => {
+    const layer = clientLayer('mcp-a', 'a', {
+      serverName: 'a',
+      transport: 'stdio',
+      command: 'node',
+      env: { KEY: '${credential:KEY}' },
+    })
+    const pluginManager = fakePluginManager({
+      apply: (id, enabled) => {
+        if (id === 'mcp-a') layer.entry.options.disabled = !enabled
+      },
+    })
+    const { workbench } = harness({ pluginManager, layers: [layer] })
+    const before = await workbench.probe('a')
+    expect(before).toMatchObject({ ok: false, error: { stage: 'credential' } })
+    await workbench.setEnabled('a', false)
+    expect(await workbench.probe('a')).not.toBe(before)
+  })
+
+  it('refuses to switch a profile row without a plugin manager', async () => {
+    const { workbench } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow)], pluginService: false })
+    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('unsupported')
+  })
+
+  it('refuses to switch a server the manager owns', async () => {
     const manager = fakeManager([{ name: 'external', configured: true, status: { state: 'ready' } }])
     const { workbench } = harness({ manager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
-    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('not-editable')
     expect(await failureCode(() => workbench.setEnabled('external', false))).toBe('not-editable')
   })
 })

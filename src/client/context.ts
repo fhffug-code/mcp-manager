@@ -4,7 +4,10 @@ export type Translate = (key: string) => string
 
 export interface SlotRegistration {
   name: string
+  /** The list entry of a panel; `main` keyed slots address the same value through `key`. */
   id: string
+  /** The keyed slot a full-screen panel registers under, when the slot is keyed. */
+  key?: string
   order?: number
   label?: () => string
   locale?: string
