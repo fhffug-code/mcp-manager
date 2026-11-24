@@ -285,6 +285,23 @@ describe('plugin writes', () => {
     ])
   })
 
+  it('drops the cached probe when a profile row is switched', async () => {
+    const { workbench } = harness({
+      layers: [
+        clientLayer('mcp-a', 'a', {
+          serverName: 'a',
+          transport: 'stdio',
+          command: 'node',
+          env: { KEY: '${credential:KEY}' },
+        }),
+      ],
+    })
+    const before = await workbench.probe('a')
+    expect(before).toMatchObject({ ok: false, error: { stage: 'credential' } })
+    await workbench.setEnabled('a', false)
+    expect(await workbench.probe('a')).not.toBe(before)
+  })
+
   it('refuses to switch a profile row without a plugin manager', async () => {
     const { workbench } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow)], pluginService: false })
     expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('unsupported')

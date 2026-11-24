@@ -272,6 +272,8 @@ export class Workbench {
       )
     }
     await manager.setPluginEnabled(entryId, enabled)
+    // Switching a server changes the tool set, so the cached probe no longer describes it.
+    this.probes.delete(server.name)
     return { ...server.view, enabled }
   }
 
