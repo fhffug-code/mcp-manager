@@ -24,14 +24,79 @@ export interface WorkbenchTabProps {
 type Status = 'loading' | 'ready' | 'failed'
 
 const palette = {
-  text: 'var(--dsw-alias-text-primary, #1f2328)',
-  muted: 'var(--dsw-alias-text-secondary, #6b7280)',
-  border: 'var(--dsw-alias-border-secondary, #e5e7eb)',
-  surface: 'var(--dsw-alias-surface-secondary, #f9fafb)',
-  accent: 'var(--dsw-alias-text-accent, #2563eb)',
-  danger: 'var(--dsw-alias-text-danger, #b91c1c)',
-  success: 'var(--dsw-alias-text-success, #15803d)',
+  text: 'var(--dsw-alias-label-primary, inherit)',
+  muted: 'var(--dsw-alias-label-tertiary, inherit)',
+  border: 'var(--dsw-alias-border-l2, currentColor)',
+  panel: 'var(--dsw-alias-card-fill, transparent)',
+  input: 'var(--dsw-alias-bg-base, transparent)',
+  selected: 'var(--dsw-alias-interactive-bg-hover-solid, transparent)',
+  selectedBorder: 'var(--dsw-alias-border-selected, currentColor)',
+  accent: 'var(--dsw-alias-link, inherit)',
+  danger: 'var(--dsw-alias-state-error-primary, inherit)',
+  success: 'var(--dsw-alias-state-success-primary, inherit)',
+  code: 'var(--ds-font-family-code, ui-monospace, monospace)',
 } as const
+
+/**
+ * Controls copied from the host's own pages: the wrapper scopes them, so the button, input and
+ * list rules never reach a sibling page. Colors stay on `--dsw-alias-*` tokens, which the theme
+ * swaps when the user changes light/dark, and every rule degrades to the inherited color when a
+ * token is renamed.
+ */
+const STYLES = `
+.mcp-workbench button {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  border: 1px solid var(--dsw-alias-border-l2, currentColor);
+  background: var(--dsw-alias-button-elevated-fill, transparent);
+  color: var(--dsw-alias-label-primary, inherit);
+  cursor: pointer;
+}
+.mcp-workbench button:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid, transparent);
+}
+.mcp-workbench button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mcp-workbench button.mcpw-primary {
+  border-color: transparent;
+  background: var(--dsw-alias-button-primary-fill, currentColor);
+  color: var(--dsw-alias-label-primary-foreground, inherit);
+}
+.mcp-workbench button.mcpw-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.mcp-workbench button.mcpw-list {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+}
+.mcp-workbench button.mcpw-list[aria-current='true'] {
+  background: var(--dsw-alias-interactive-bg-hover-solid, transparent);
+  border-color: var(--dsw-alias-border-selected, currentColor);
+}
+.mcp-workbench input,
+.mcp-workbench select,
+.mcp-workbench textarea {
+  font: inherit;
+  color: var(--dsw-alias-label-primary, inherit);
+  background: var(--dsw-alias-bg-base, transparent);
+  border: 1px solid var(--dsw-alias-border-l2, currentColor);
+  border-radius: var(--dsw-radius-sm, 8px);
+}
+.mcp-workbench input::placeholder,
+.mcp-workbench textarea::placeholder {
+  color: var(--dsw-alias-label-caption, inherit);
+}
+`
 
 const sourceLabel = (source: ServerView['source'], t: Translate): string =>
   source === 'profile' ? t('profileSource') : source === 'plugin' ? t('pluginSource') : t('managerSource')
@@ -41,7 +106,15 @@ const errorText = (error: unknown): string =>
 
 function Panel(props: { children: ReactNode }): ReactElement {
   return (
-    <section style={{ border: `1px solid ${palette.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+    <section
+      style={{
+        border: `1px solid ${palette.border}`,
+        borderRadius: 'var(--dsw-radius-md, 12px)',
+        background: palette.panel,
+        padding: 12,
+        marginBottom: 12,
+      }}
+    >
       {props.children}
     </section>
   )
@@ -61,8 +134,8 @@ const inputStyle: CSSProperties = {
   boxSizing: 'border-box',
   padding: '4px 6px',
   border: `1px solid ${palette.border}`,
-  borderRadius: 6,
-  background: 'transparent',
+  borderRadius: 'var(--dsw-radius-sm, 8px)',
+  background: palette.input,
   color: palette.text,
   font: 'inherit',
 }
@@ -109,6 +182,7 @@ function RowEditor(props: {
           />
           <button
             type="button"
+            className="mcpw-link"
             title={row.remove ? props.t('cancel') : props.t('remove')}
             onClick={() => update(index, { remove: !row.remove })}
             style={{
@@ -124,6 +198,7 @@ function RowEditor(props: {
       ))}
       <button
         type="button"
+        className="mcpw-link"
         onClick={add}
         style={{ background: 'transparent', border: 'none', color: palette.accent, cursor: 'pointer', padding: 0 }}
       >
@@ -347,342 +422,355 @@ export function WorkbenchTab({ t }: WorkbenchTabProps): ReactElement {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', color: palette.text }}>
-      <aside style={{ flex: '0 0 300px' }}>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <button type="button" onClick={() => void reload()} disabled={busy !== undefined}>
-            {t('refresh')}
-          </button>
-          <button type="button" onClick={() => setAdding((open) => !open)}>
-            {t('add')}
-          </button>
-        </div>
-        {adding ? (
-          <Panel>
-            <Field label={t('name')}>
-              <input
-                style={inputStyle}
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-              />
-            </Field>
-            <Field label={t('transport')}>
-              <select
-                style={inputStyle}
-                value={form.transport}
-                onChange={(event) =>
-                  setForm({ ...form, transport: event.target.value === 'stdio' ? 'stdio' : 'streamable-http' })
-                }
-              >
-                <option value="stdio">stdio</option>
-                <option value="streamable-http">streamable-http</option>
-              </select>
-            </Field>
-            {form.transport === 'stdio' ? (
-              <>
-                <Field label={t('command')}>
-                  <input
-                    style={inputStyle}
-                    value={form.command}
-                    onChange={(event) => setForm({ ...form, command: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('args')}>
-                  <input
-                    style={inputStyle}
-                    value={form.args}
-                    onChange={(event) => setForm({ ...form, args: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('env')}>
-                  <textarea
-                    style={{ ...inputStyle, minHeight: 56 }}
-                    placeholder="TOKEN=..."
-                    value={form.env}
-                    onChange={(event) => setForm({ ...form, env: event.target.value })}
-                  />
-                </Field>
-              </>
-            ) : (
-              <>
-                <Field label={t('url')}>
-                  <input
-                    style={inputStyle}
-                    value={form.url}
-                    onChange={(event) => setForm({ ...form, url: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('headers')}>
-                  <textarea
-                    style={{ ...inputStyle, minHeight: 56 }}
-                    placeholder="Authorization=..."
-                    value={form.env}
-                    onChange={(event) => setForm({ ...form, env: event.target.value })}
-                  />
-                </Field>
-              </>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => void create()}
-                disabled={busy !== undefined || form.name.trim() === ''}
-              >
-                {t('create')}
-              </button>
-              <button type="button" onClick={() => setAdding(false)}>
-                {t('cancel')}
-              </button>
-            </div>
-          </Panel>
-        ) : null}
-        {servers.length === 0 ? (
-          <p style={{ color: palette.muted }}>{t('empty')}</p>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {servers.map((server) => (
-              <li key={`${server.source}:${server.name}`} style={{ marginBottom: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => void openServer(server.name)}
-                  aria-current={selected === server.name ? 'true' : undefined}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: 8,
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    color: palette.text,
-                    border: `1px solid ${selected === server.name ? palette.accent : palette.border}`,
-                    background: selected === server.name ? palette.surface : 'transparent',
-                  }}
-                >
-                  <span style={{ display: 'block', fontWeight: 600 }}>{server.name}</span>
-                  <span style={{ display: 'block', fontSize: 12, color: palette.muted }}>
-                    {sourceLabel(server.source, t)} · {server.transport} ·{' '}
-                    {server.enabled ? t('enabled') : t('disabled')}
-                  </span>
-                  <span style={{ display: 'block', fontSize: 12, color: palette.muted }}>
-                    {probeHeadline(server.probe, t)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-      <main style={{ flex: 1, minWidth: 0 }}>
-        {banners}
-        {detail === undefined || draft === undefined ? (
-          <p style={{ color: palette.muted }}>{t('choose')}</p>
-        ) : (
-          <>
-            <h3 style={{ margin: '0 0 4px' }}>{detail.server.name}</h3>
-            <p style={{ margin: '0 0 12px', fontSize: 12, color: palette.muted }}>
-              {sourceLabel(detail.server.source, t)} · {detail.server.transport}
-              {detail.server.live === undefined ? null : ` · ${t('live')}: ${detail.server.live}`}
-              {detail.server.editable ? '' : ` · ${t('readOnly')}`}
-            </p>
-            {detail.server.editable ? null : <p style={{ color: palette.muted }}>{t('notEditableHint')}</p>}
+    <>
+      <style>{STYLES}</style>
+      <div
+        className="mcp-workbench"
+        style={{ display: 'flex', gap: 16, alignItems: 'flex-start', color: palette.text }}
+      >
+        <aside style={{ flex: '0 0 300px' }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <button type="button" onClick={() => void reload()} disabled={busy !== undefined}>
+              {t('refresh')}
+            </button>
+            <button type="button" onClick={() => setAdding((open) => !open)}>
+              {t('add')}
+            </button>
+          </div>
+          {adding ? (
             <Panel>
-              {detail.server.transport === 'stdio' ? (
+              <Field label={t('name')}>
+                <input
+                  style={inputStyle}
+                  value={form.name}
+                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                />
+              </Field>
+              <Field label={t('transport')}>
+                <select
+                  style={inputStyle}
+                  value={form.transport}
+                  onChange={(event) =>
+                    setForm({ ...form, transport: event.target.value === 'stdio' ? 'stdio' : 'streamable-http' })
+                  }
+                >
+                  <option value="stdio">stdio</option>
+                  <option value="streamable-http">streamable-http</option>
+                </select>
+              </Field>
+              {form.transport === 'stdio' ? (
                 <>
                   <Field label={t('command')}>
                     <input
                       style={inputStyle}
-                      value={draft.command}
-                      onChange={(event) => setDraft({ ...draft, command: event.target.value })}
+                      value={form.command}
+                      onChange={(event) => setForm({ ...form, command: event.target.value })}
                     />
                   </Field>
                   <Field label={t('args')}>
                     <input
                       style={inputStyle}
-                      value={draft.args}
-                      onChange={(event) => setDraft({ ...draft, args: event.target.value })}
+                      value={form.args}
+                      onChange={(event) => setForm({ ...form, args: event.target.value })}
                     />
                   </Field>
-                  <Field label={t('cwd')}>
-                    <input
-                      style={inputStyle}
-                      value={draft.cwd}
-                      onChange={(event) => setDraft({ ...draft, cwd: event.target.value })}
+                  <Field label={t('env')}>
+                    <textarea
+                      style={{ ...inputStyle, minHeight: 56 }}
+                      placeholder="TOKEN=..."
+                      value={form.env}
+                      onChange={(event) => setForm({ ...form, env: event.target.value })}
                     />
                   </Field>
-                  <div style={{ marginBottom: 8 }}>
-                    <span style={{ display: 'block', fontSize: 12, color: palette.muted, marginBottom: 2 }}>
-                      {t('env')}
-                    </span>
-                    <RowEditor
-                      rows={draft.env}
-                      onChange={(env) => setDraft({ ...draft, env })}
-                      t={t}
-                      secretLabel={t('secretHint')}
-                    />
-                  </div>
                 </>
               ) : (
                 <>
                   <Field label={t('url')}>
                     <input
                       style={inputStyle}
-                      value={draft.url}
-                      onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+                      value={form.url}
+                      onChange={(event) => setForm({ ...form, url: event.target.value })}
                     />
                   </Field>
-                  <div style={{ marginBottom: 8 }}>
-                    <span style={{ display: 'block', fontSize: 12, color: palette.muted, marginBottom: 2 }}>
-                      {t('headers')}
-                    </span>
-                    <RowEditor
-                      rows={draft.headers}
-                      onChange={(headers) => setDraft({ ...draft, headers })}
-                      t={t}
-                      secretLabel={t('secretHint')}
+                  <Field label={t('headers')}>
+                    <textarea
+                      style={{ ...inputStyle, minHeight: 56 }}
+                      placeholder="Authorization=..."
+                      value={form.env}
+                      onChange={(event) => setForm({ ...form, env: event.target.value })}
                     />
-                  </div>
+                  </Field>
                 </>
               )}
               <div style={{ display: 'flex', gap: 8 }}>
-                <Field label={t('toolCallTimeoutMs')}>
-                  <input
-                    style={inputStyle}
-                    value={draft.toolCallTimeoutMs}
-                    onChange={(event) => setDraft({ ...draft, toolCallTimeoutMs: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('startupTimeoutMs')}>
-                  <input
-                    style={inputStyle}
-                    value={draft.startupTimeoutMs}
-                    onChange={(event) => setDraft({ ...draft, startupTimeoutMs: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('closeTimeoutMs')}>
-                  <input
-                    style={inputStyle}
-                    value={draft.closeTimeoutMs}
-                    onChange={(event) => setDraft({ ...draft, closeTimeoutMs: event.target.value })}
-                  />
-                </Field>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" onClick={() => void runProbe(probe !== undefined)} disabled={busy !== undefined}>
-                  {probe === undefined ? t('probe') : t('probeAgain')}
+                <button
+                  type="button"
+                  className="mcpw-primary"
+                  onClick={() => void create()}
+                  disabled={busy !== undefined || form.name.trim() === ''}
+                >
+                  {t('create')}
                 </button>
-                {detail.server.editable ? (
-                  <button type="button" onClick={() => void save()} disabled={busy !== undefined}>
-                    {t('save')}
-                  </button>
-                ) : null}
-                {detail.server.source === 'plugin' ? (
-                  <>
-                    <button type="button" onClick={() => void toggleEnabled()} disabled={busy !== undefined}>
-                      {detail.server.enabled ? t('disable') : t('enable')}
-                    </button>
-                    <button type="button" onClick={() => void remove()} disabled={busy !== undefined}>
-                      {t('remove')}
-                    </button>
-                  </>
-                ) : null}
-                {detail.server.source === 'profile' ? null : (
-                  <button type="button" onClick={() => void restart()} disabled={busy !== undefined}>
-                    {t('restart')}
-                  </button>
-                )}
+                <button type="button" onClick={() => setAdding(false)}>
+                  {t('cancel')}
+                </button>
               </div>
             </Panel>
-            <Panel>
-              <strong>{t('lastProbe')}</strong>
-              <p style={{ margin: '4px 0', color: probe?.ok === true ? palette.text : palette.muted }}>
-                {probeHeadline(probe, t)}
-                {probe?.serverInfo === undefined
-                  ? null
-                  : ` · ${probe.serverInfo.name ?? ''} ${probe.serverInfo.version ?? ''}`}
-                {probe === undefined ? null : ` · ${durationText(probe.durationMs)}`}
+          ) : null}
+          {servers.length === 0 ? (
+            <p style={{ color: palette.muted }}>{t('empty')}</p>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {servers.map((server) => (
+                <li key={`${server.source}:${server.name}`} style={{ marginBottom: 6 }}>
+                  <button
+                    type="button"
+                    className="mcpw-list"
+                    onClick={() => void openServer(server.name)}
+                    aria-current={selected === server.name ? 'true' : undefined}
+                    style={{ color: palette.text }}
+                  >
+                    <span style={{ display: 'block', fontWeight: 600 }}>{server.name}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: palette.muted }}>
+                      {sourceLabel(server.source, t)} · {server.transport} ·{' '}
+                      {server.enabled ? t('enabled') : t('disabled')}
+                    </span>
+                    <span style={{ display: 'block', fontSize: 12, color: palette.muted }}>
+                      {probeHeadline(server.probe, t)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
+        <main style={{ flex: 1, minWidth: 0 }}>
+          {banners}
+          {detail === undefined || draft === undefined ? (
+            <p style={{ color: palette.muted }}>{t('choose')}</p>
+          ) : (
+            <>
+              <h3 style={{ margin: '0 0 4px' }}>{detail.server.name}</h3>
+              <p style={{ margin: '0 0 12px', fontSize: 12, color: palette.muted }}>
+                {sourceLabel(detail.server.source, t)} · {detail.server.transport}
+                {detail.server.live === undefined ? null : ` · ${t('live')}: ${detail.server.live}`}
+                {detail.server.editable ? '' : ` · ${t('readOnly')}`}
               </p>
-              {probe?.error === undefined ? null : (
-                <p style={{ color: palette.danger }}>
-                  {probe.error.stage}: {probe.error.message}
+              {detail.server.editable ? null : <p style={{ color: palette.muted }}>{t('notEditableHint')}</p>}
+              <Panel>
+                {detail.server.transport === 'stdio' ? (
+                  <>
+                    <Field label={t('command')}>
+                      <input
+                        style={inputStyle}
+                        value={draft.command}
+                        onChange={(event) => setDraft({ ...draft, command: event.target.value })}
+                      />
+                    </Field>
+                    <Field label={t('args')}>
+                      <input
+                        style={inputStyle}
+                        value={draft.args}
+                        onChange={(event) => setDraft({ ...draft, args: event.target.value })}
+                      />
+                    </Field>
+                    <Field label={t('cwd')}>
+                      <input
+                        style={inputStyle}
+                        value={draft.cwd}
+                        onChange={(event) => setDraft({ ...draft, cwd: event.target.value })}
+                      />
+                    </Field>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ display: 'block', fontSize: 12, color: palette.muted, marginBottom: 2 }}>
+                        {t('env')}
+                      </span>
+                      <RowEditor
+                        rows={draft.env}
+                        onChange={(env) => setDraft({ ...draft, env })}
+                        t={t}
+                        secretLabel={t('secretHint')}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Field label={t('url')}>
+                      <input
+                        style={inputStyle}
+                        value={draft.url}
+                        onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+                      />
+                    </Field>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ display: 'block', fontSize: 12, color: palette.muted, marginBottom: 2 }}>
+                        {t('headers')}
+                      </span>
+                      <RowEditor
+                        rows={draft.headers}
+                        onChange={(headers) => setDraft({ ...draft, headers })}
+                        t={t}
+                        secretLabel={t('secretHint')}
+                      />
+                    </div>
+                  </>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Field label={t('toolCallTimeoutMs')}>
+                    <input
+                      style={inputStyle}
+                      value={draft.toolCallTimeoutMs}
+                      onChange={(event) => setDraft({ ...draft, toolCallTimeoutMs: event.target.value })}
+                    />
+                  </Field>
+                  <Field label={t('startupTimeoutMs')}>
+                    <input
+                      style={inputStyle}
+                      value={draft.startupTimeoutMs}
+                      onChange={(event) => setDraft({ ...draft, startupTimeoutMs: event.target.value })}
+                    />
+                  </Field>
+                  <Field label={t('closeTimeoutMs')}>
+                    <input
+                      style={inputStyle}
+                      value={draft.closeTimeoutMs}
+                      onChange={(event) => setDraft({ ...draft, closeTimeoutMs: event.target.value })}
+                    />
+                  </Field>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => void runProbe(probe !== undefined)}
+                    disabled={busy !== undefined}
+                  >
+                    {probe === undefined ? t('probe') : t('probeAgain')}
+                  </button>
+                  {detail.server.editable ? (
+                    <button
+                      type="button"
+                      className="mcpw-primary"
+                      onClick={() => void save()}
+                      disabled={busy !== undefined}
+                    >
+                      {t('save')}
+                    </button>
+                  ) : null}
+                  {detail.server.source === 'plugin' ? (
+                    <>
+                      <button type="button" onClick={() => void toggleEnabled()} disabled={busy !== undefined}>
+                        {detail.server.enabled ? t('disable') : t('enable')}
+                      </button>
+                      <button type="button" onClick={() => void remove()} disabled={busy !== undefined}>
+                        {t('remove')}
+                      </button>
+                    </>
+                  ) : null}
+                  {detail.server.source === 'profile' ? null : (
+                    <button type="button" onClick={() => void restart()} disabled={busy !== undefined}>
+                      {t('restart')}
+                    </button>
+                  )}
+                </div>
+              </Panel>
+              <Panel>
+                <strong>{t('lastProbe')}</strong>
+                <p style={{ margin: '4px 0', color: probe?.ok === true ? palette.text : palette.muted }}>
+                  {probeHeadline(probe, t)}
+                  {probe?.serverInfo === undefined
+                    ? null
+                    : ` · ${probe.serverInfo.name ?? ''} ${probe.serverInfo.version ?? ''}`}
+                  {probe === undefined ? null : ` · ${durationText(probe.durationMs)}`}
                 </p>
-              )}
-              {probe?.ok === true ? (
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {probe.tools.map((listed) => (
-                    <li key={listed.name} style={{ marginBottom: 2 }}>
-                      <button
-                        type="button"
-                        onClick={() => setTool(listed.name)}
+                {probe?.error === undefined ? null : (
+                  <p style={{ color: palette.danger }}>
+                    {probe.error.stage}: {probe.error.message}
+                  </p>
+                )}
+                {probe?.ok === true ? (
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {probe.tools.map((listed) => (
+                      <li key={listed.name} style={{ marginBottom: 2 }}>
+                        <button
+                          type="button"
+                          className="mcpw-link"
+                          onClick={() => setTool(listed.name)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            color: tool === listed.name ? palette.accent : palette.text,
+                            font: 'inherit',
+                          }}
+                        >
+                          {listed.name}
+                        </button>
+                        {listed.schemaOmitted === true ? (
+                          <span style={{ fontSize: 12, color: palette.muted }}> ({t('truncated')})</span>
+                        ) : null}
+                        {listed.description === undefined ? null : (
+                          <span style={{ fontSize: 12, color: palette.muted }}> — {listed.description}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </Panel>
+              <Panel>
+                <Field label={t('tools')}>
+                  <input style={inputStyle} value={tool} onChange={(event) => setTool(event.target.value)} />
+                </Field>
+                <Field label={t('arguments')}>
+                  <textarea
+                    style={{ ...inputStyle, minHeight: 72, fontFamily: palette.code }}
+                    value={argsText}
+                    onChange={(event) => setArgsText(event.target.value)}
+                  />
+                </Field>
+                <button
+                  type="button"
+                  className="mcpw-primary"
+                  onClick={() => void runCall()}
+                  disabled={busy !== undefined || tool.trim() === ''}
+                >
+                  {t('call')}
+                </button>
+                {callResult === undefined ? null : (
+                  <div style={{ marginTop: 10 }}>
+                    <p style={{ margin: '0 0 4px', fontSize: 12, color: palette.muted }}>
+                      {durationText(callResult.durationMs)}
+                      {callResult.isError ? ` · ${t('isError')}` : ''}
+                      {callResult.truncated ? ` · ${t('truncated')}` : ''}
+                    </p>
+                    {callResult.error === undefined ? null : (
+                      <p style={{ color: palette.danger }}>
+                        {callResult.error.stage}: {callResult.error.message}
+                      </p>
+                    )}
+                    {callResult.content.map((block, index) => (
+                      <pre
+                        key={`${block.type}-${index}`}
                         style={{
-                          background: 'transparent',
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          color: tool === listed.name ? palette.accent : palette.text,
-                          font: 'inherit',
+                          margin: '0 0 6px',
+                          padding: 8,
+                          borderRadius: 6,
+                          background: palette.panel,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontSize: 12,
                         }}
                       >
-                        {listed.name}
-                      </button>
-                      {listed.schemaOmitted === true ? (
-                        <span style={{ fontSize: 12, color: palette.muted }}> ({t('truncated')})</span>
-                      ) : null}
-                      {listed.description === undefined ? null : (
-                        <span style={{ fontSize: 12, color: palette.muted }}> — {listed.description}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </Panel>
-            <Panel>
-              <Field label={t('tools')}>
-                <input style={inputStyle} value={tool} onChange={(event) => setTool(event.target.value)} />
-              </Field>
-              <Field label={t('arguments')}>
-                <textarea
-                  style={{ ...inputStyle, minHeight: 72, fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}
-                  value={argsText}
-                  onChange={(event) => setArgsText(event.target.value)}
-                />
-              </Field>
-              <button type="button" onClick={() => void runCall()} disabled={busy !== undefined || tool.trim() === ''}>
-                {t('call')}
-              </button>
-              {callResult === undefined ? null : (
-                <div style={{ marginTop: 10 }}>
-                  <p style={{ margin: '0 0 4px', fontSize: 12, color: palette.muted }}>
-                    {durationText(callResult.durationMs)}
-                    {callResult.isError ? ` · ${t('isError')}` : ''}
-                    {callResult.truncated ? ` · ${t('truncated')}` : ''}
-                  </p>
-                  {callResult.error === undefined ? null : (
-                    <p style={{ color: palette.danger }}>
-                      {callResult.error.stage}: {callResult.error.message}
-                    </p>
-                  )}
-                  {callResult.content.map((block, index) => (
-                    <pre
-                      key={`${block.type}-${index}`}
-                      style={{
-                        margin: '0 0 6px',
-                        padding: 8,
-                        borderRadius: 6,
-                        background: palette.surface,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        fontSize: 12,
-                      }}
-                    >
-                      {contentText(block)}
-                    </pre>
-                  ))}
-                </div>
-              )}
-            </Panel>
-          </>
-        )}
-      </main>
-    </div>
+                        {contentText(block)}
+                      </pre>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </>
+          )}
+        </main>
+      </div>
+    </>
   )
 }
