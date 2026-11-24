@@ -7,7 +7,7 @@ A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after 
 ## What it does
 
 - **See every server.** Profile rows (`@deepseek-ai/dsh-mcp-client` entries in the profile patch), the servers this bundle owns, and servers other plugins registered through `mcpManager` appear in one searchable list with their transport, live state, and endpoint.
-- **Switch a server on or off.** A profile row is toggled through the official plugin manager, which rewrites only `disabled` in the profile patch; a server this bundle owns is toggled in its own row.
+- **Switch a server on or off.** A profile row is toggled through the official plugin manager, which rewrites only `disabled` in the profile patch; a server the profile hands to `@deepseek-ai/dsh-mcp-manager` is toggled in that row's `servers` map; a server this bundle owns is toggled in its own row.
 - **Edit in place.** A profile row is edited through `ctx.configEditor.edit()`, so comments and `!!js` expressions survive and the row is validated before it is written. A missing field keeps its stored value, an empty one removes it.
 - **Probe for tools.** The probe opens its own short-lived MCP connection, so it works on a disabled server, does not disturb the connection the agent is using, and returns tool names, descriptions and input schemas with a name and schema budget.
 - **Test a call.** Pick a tool, get its arguments prefilled from the input schema, send them, and read the answer three ways: JSON, a foldable tree, or the raw request and response.
@@ -38,17 +38,43 @@ The bundle stays installed across restarts and belongs to the profile, not to on
 
 ## The three sources of a server
 
-| Source    | What it is                                              | What this plugin may do                     |
-| --------- | ------------------------------------------------------- | ------------------------------------------- |
-| `profile` | A static `@deepseek-ai/dsh-mcp-client` row in the patch | Edit its configuration, switch it on or off |
-| `plugin`  | A server stored in this bundle's own `servers` config   | Add, remove, enable, disable, edit, restart |
-| `manager` | A server another plugin registered on `ctx.mcpManager`  | Read it, restart it                         |
+| Source    | What it is                                                   | What this plugin may do                     |
+| --------- | ------------------------------------------------------------ | ------------------------------------------- |
+| `profile` | A static `@deepseek-ai/dsh-mcp-client` row in the patch      | Edit its configuration, switch it on or off |
+| `managed` | A server in the profile's `@deepseek-ai/dsh-mcp-manager` row | Edit it, switch it on or off, remove it     |
+| `plugin`  | A server stored in this bundle's own `servers` config        | Add, remove, enable, disable, edit, restart |
+| `manager` | A server another plugin registered on `ctx.mcpManager`       | Read it, restart it                         |
 
 A profile row cannot be added or removed here: those are entry options that
 `configEditor.edit()` does not write. It can be switched on and off, because that is what the
 plugin manager writes — unless the patch mounts it inside an `insert:` group, which is the one
 case a patch layer cannot override, and then the page reports that refusal instead of pretending
 it switched. A profile row also cannot be restarted, because the manager does not govern it.
+
+A `managed` server lives in the `servers` map of a profile row whose name is
+`@deepseek-ai/dsh-mcp-manager`. That fleet treats `enabled` as an ordinary field of the map, so a
+switch here is a plain config write and takes effect at once. Moving a static row into that map is
+what makes it switchable:
+
+```yaml
+# instead of a `- insert:` group of @deepseek-ai/dsh-mcp-client rows:
+- id: mcp-manager
+  config:
+    servers:
+      clion:
+        transport: streamable-http
+        url: http://127.0.0.1:64362/stream
+      github:
+        transport: stdio
+        command: 'D:/Program Files/DeepSeek Harness/github-mcp-server.exe'
+        args: [stdio]
+        env:
+          GITHUB_PERSONAL_ACCESS_TOKEN: !!js process.env.GITHUB_PERSONAL_ACCESS_TOKEN
+```
+
+The map key is the server name, and the tool prefix (`mcp__<name>__`) stays the same. A profile
+patch replaces the whole config of the row it names, so this row must list every server the fleet
+should run.
 
 A row the patch mounts inside an `insert:` group is edited by writing a top-level row that
 carries the whole configuration, because that is the row `configEditor.edit()` can address;

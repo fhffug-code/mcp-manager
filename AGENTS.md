@@ -9,17 +9,18 @@ Node 22. It is a private bundle installed into a profile, not a package publishe
 one entry in the sidebar — **MCP**, after **Plugins** and the marketplace — and the page that entry
 opens: servers on the left, tools in the middle, one tool's detail and test call on the right. The same
 operations are exposed to the model through the `mcp_workbench` tool. Both surfaces call one service,
-and one same-origin route (`POST /api/mcp-workbench`) carries the browser traffic. The three server
-sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows of the profile patch), `plugin` (the
-servers this bundle owns in its own config row) and `manager` (whatever else registered on
-`mcpManager`, read-only).
+and one same-origin route (`POST /api/mcp-workbench`) carries the browser traffic. The four server
+sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows of the profile patch), `managed` (the
+`servers` map of a profile row whose name is `@deepseek-ai/dsh-mcp-manager`), `plugin` (the servers this
+bundle owns in its own config row) and `manager` (whatever else registered on `mcpManager`, read-only).
 
 **中文。** `@local/dsh-mcp-workbench` 是一个用 TypeScript 编写、运行在 Node 22 上的 DeepSeek Harness
 插件。它是装进 profile 的私有 bundle，不发布到任何 registry。它在左侧栏占一个入口「MCP」（排在【插件】
 与插件市场之后），并拥有它打开的页面：左边服务器、中间工具、右边单个工具的说明与试调用。同样的操作也
 通过 `mcp_workbench` 工具暴露给模型。两个界面共用同一个 service，浏览器只走一条同源路由
-`POST /api/mcp-workbench`。三个来源分别是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client`
-静态行）、`plugin`（本 bundle 自己配置行里的服务器）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
+`POST /api/mcp-workbench`。四个来源分别是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client`
+静态行）、`managed`（profile 里名字是 `@deepseek-ai/dsh-mcp-manager` 的那一行的 `servers` 映射）、
+`plugin`（本 bundle 自己配置行里的服务器）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
 
 ## 2. How to run commands on this machine / 这台机器怎么跑命令
 
@@ -196,6 +197,10 @@ release 线也带上这个修复。
   same patch layer inserts, so it answers `overridden` for the five `mcp-*` rows: read that answer and
   report it, never claim a switch the composition did not take. Switching a profile row is `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`,
   where `entryId` is the row's `entry.options.id`.
+- A `managed` server lives in the `servers` map of a profile row named
+  `@deepseek-ai/dsh-mcp-manager`; there `enabled` is an ordinary field, so switching it is an ordinary
+  config write. Moving a statically declared `mcp-client` row into that map is the only way to switch a
+  server the profile already declares — a plugin cannot delete or re-enable an `insert:` row.
 - `install_bundle` can fail once with `EPERM … rename package.json.<digits>`; an identical retry succeeds.
 - esbuild's postinstall is blocked under the bundled npm, but its JS API works — `scripts/build-client.mjs`
   uses it. Never call `npx esbuild`.

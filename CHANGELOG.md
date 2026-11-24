@@ -7,7 +7,8 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - An **MCP** entry in the sidebar, after **Plugins** and the plugin marketplace, opening an **MCP management** page that lists the three sources of servers: the static `@deepseek-ai/dsh-mcp-client` rows of the profile, the servers this bundle owns, and the servers other plugins registered on `mcpManager`.
-- Switching a server on or off from that list: a profile row goes through the plugin manager, which rewrites only `disabled` in the profile patch; a server this bundle owns is toggled in its own row.
+- Switching a server on or off from that list: a profile row goes through the plugin manager, which rewrites only `disabled` in the profile patch; a server the profile gives to `@deepseek-ai/dsh-mcp-manager` is switched in that row's `servers` map; a server this bundle owns is toggled in its own row.
+- The `managed` source: the servers of a profile row whose name is `@deepseek-ai/dsh-mcp-manager` are listed, and can be edited, switched and removed, because `enabled` is an ordinary field of that map. Moving a static row into that map is the supported way to get a working switch.
 - A test call that prefills its arguments from the tool's input schema and shows the answer as JSON, as a foldable tree, or as the raw request and response.
 - Search boxes over the server list and the tool list, and tool rows that keep their description to two lines.
 - In-place editing of a profile row through `configEditor.edit()`, with the raw layer preserved, `!!js` expressions round-tripped, and optional fields cleared with `null`.
@@ -16,7 +17,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - A `mcp_workbench` tool with `list`, `detail`, `probe`, `call`, `save`, `add`, `remove`, `setEnabled` and `restart`; every change needs `confirm: true`.
 - An English and a Chinese locale for the page and the bundle metadata.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
-- A vitest suite of 159 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, and a jsdom test of the page's switch and its bands.
+- A vitest suite of 165 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, and a jsdom test of the page's switch and its bands.
 - GitHub Actions: the verification pipeline, a check that a pull request comes from a branch of the right kind, and a Conventional Commit check.
 
 ### Changed
