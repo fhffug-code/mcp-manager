@@ -1,5 +1,5 @@
 /** Every operation, implemented once; the settings page and the model tool both call this. */
-import { applyPatch, validatePatched } from './edit.js'
+import { applyPatch, expressionPath, validatePatched } from './edit.js'
 import { WorkbenchFailure } from './failures.js'
 import { readInventory, type InventorySource, type ResolvedServer } from './inventory.js'
 import { callServerTool, probeServer } from './probe.js'
@@ -197,6 +197,13 @@ export class Workbench {
     const editor = this.requireEditor()
     await editor.edit(entry, (current) => {
       const servers = isRecord(current['servers']) ? current['servers'] : {}
+      const expression = expressionPath(servers, 'servers')
+      if (expression !== undefined) {
+        throw new WorkbenchFailure(
+          'invalid-config',
+          `the manager row keeps a "!!js" expression at ${expression}, and that row's schema only accepts a string there; store the value as a literal or as \${credential:NAME} and this server can be changed here`,
+        )
+      }
       return { ...current, servers: change(servers) }
     })
     // The fleet is rebuilt from the new map, so a cached probe no longer describes the server.

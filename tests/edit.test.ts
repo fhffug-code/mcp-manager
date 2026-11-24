@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { SECRET_KEY_PATTERN, applyPatch, encodeFieldValue, fieldsOf, validatePatched } from '../src/edit.js'
+import {
+  SECRET_KEY_PATTERN,
+  applyPatch,
+  encodeFieldValue,
+  expressionPath,
+  fieldsOf,
+  validatePatched,
+} from '../src/edit.js'
 
 describe('SECRET_KEY_PATTERN', () => {
   it('matches the names a credential hides behind', () => {
@@ -121,5 +128,19 @@ describe('validatePatched', () => {
   it('reports the same problems the spec validator does', () => {
     expect(validatePatched({ transport: 'stdio' })).toEqual(['command is required'])
     expect(validatePatched({ transport: 'stdio', command: 'node' })).toEqual([])
+  })
+})
+
+describe('expressionPath', () => {
+  it('names where a !!js expression sits', () => {
+    expect(expressionPath({ env: { TOKEN: { __jsExpr: 'process.env.TOKEN' } } })).toBe('env.TOKEN')
+    expect(expressionPath({ github: { args: ['x', { __jsExpr: 'y' }] } }, 'servers')).toBe('servers.github.args[1]')
+    expect(expressionPath({ __jsExpr: 'x' })).toBe('the value')
+  })
+
+  it('stays quiet for values the profile can store as data', () => {
+    expect(expressionPath({ env: { TOKEN: 'plain' }, args: ['a'] })).toBeUndefined()
+    expect(expressionPath({ env: { COMBINED: { __jsExpr: 'a', extra: true } } })).toBeUndefined()
+    expect(expressionPath('not a record')).toBeUndefined()
   })
 })

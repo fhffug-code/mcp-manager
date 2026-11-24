@@ -340,6 +340,21 @@ describe('plugin writes', () => {
     expect(Object.keys(recordsOf(layer))).toEqual(['other'])
   })
 
+  it('refuses to rewrite a manager row that keeps a !!js expression', async () => {
+    const layer = managedLayer({
+      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
+      github: { transport: 'stdio', command: 'node', env: { TOKEN: { __jsExpr: 'process.env.TOKEN' } } },
+    })
+    const { workbench } = harness({ layers: [layer] })
+
+    const error = await workbench.setEnabled('clion', false).catch((thrown: unknown) => thrown)
+    expect(error).toBeInstanceOf(WorkbenchFailure)
+    expect((error as WorkbenchFailure).code).toBe('invalid-config')
+    expect((error as WorkbenchFailure).message).toContain('servers.github.env.TOKEN')
+    expect(recordsOf(layer)['clion']).not.toHaveProperty('enabled')
+    expect(recordsOf(layer)['github']).toMatchObject({ env: { TOKEN: { __jsExpr: 'process.env.TOKEN' } } })
+  })
+
   it('drops the cached probe when a profile row is switched', async () => {
     const layer = clientLayer('mcp-a', 'a', {
       serverName: 'a',
