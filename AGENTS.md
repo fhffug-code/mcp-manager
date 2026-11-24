@@ -53,6 +53,7 @@ commit. CI runs the same commands on Node 22.
 ```sh
 node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit   # host
 node node_modules/typescript/bin/tsc -p tsconfig.client.json     # client
+node node_modules/typescript/bin/tsc -p tsconfig.test.json       # tests
 node node_modules/eslint/bin/eslint.js "src/**/*.{ts,tsx}" "tests/**/*.{ts,tsx}" "scripts/**/*.mjs"
 node node_modules/prettier/bin/prettier.cjs --check .
 node node_modules/vitest/vitest.mjs run --coverage
