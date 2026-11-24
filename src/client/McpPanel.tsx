@@ -1,4 +1,4 @@
-/** The MCP page: servers on the left, tools in the middle, one tool's detail and test call on the right. */
+/** The MCP page: servers on the left, tools beside them, one tool's detail above its test call. */
 import { useEffect, useMemo, useState } from 'react'
 import type { CallResult, ProbeResult, ProbeTool, ServerView } from '../types/index.js'
 import { createApi } from './api.js'
@@ -7,9 +7,9 @@ import { contentText, durationText, parseArguments } from './format.js'
 import { JsonText, JsonTree } from './JsonView.js'
 import { prefillArguments } from './prefill.js'
 import { ServerEditor } from './ServerEditor.js'
-import { inputStyle, labelStyle, palette, panelStyle, STYLES } from './styles.js'
+import { barStyle, columnStyle, headerStyle, inputStyle, labelStyle, palette, STYLES } from './styles.js'
 
-/** Which of the two result views the page shows. */
+/** Which result view the page shows: the payload as JSON, as a tree, or the whole exchange. */
 type ResultKind = 'json' | 'tree' | 'raw'
 
 export interface PanelProps {
@@ -21,6 +21,10 @@ const sourceLabel = (view: ServerView): string =>
 
 const matches = (text: string, query: string): boolean =>
   query.trim() === '' || text.toLowerCase().includes(query.trim().toLowerCase())
+
+const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** One clickable row: a muted second line that may be clamped to two lines. */
 function RowButton({
@@ -66,9 +70,9 @@ export function McpPanel({ t }: PanelProps) {
   const [callError, setCallError] = useState<string>()
   const [sending, setSending] = useState(false)
   const [failure, setFailure] = useState<string>()
+  const [pending, setPending] = useState<Record<string, boolean>>({})
+  const [rowError, setRowError] = useState<Record<string, string>>({})
   const [editor, setEditor] = useState<{ mode: 'add' | 'edit'; view?: ServerView }>()
-
-  const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
   const refresh = async (): Promise<void> => {
     try {
@@ -82,6 +86,14 @@ export function McpPanel({ t }: PanelProps) {
   useEffect(() => {
     void refresh()
   }, [])
+
+  const clearPending = (name: string): void => {
+    setPending((current) => {
+      const next = { ...current }
+      delete next[name]
+      return next
+    })
+  }
 
   const select = async (name: string): Promise<void> => {
     setSelected(name)
@@ -114,14 +126,55 @@ export function McpPanel({ t }: PanelProps) {
     }
   }
 
+  /**
+   * Switch a server and show the new state at once: the write reaches the profile, but a re-read
+   * taken before that lands still reports the old value, so the list is reconciled afterwards.
+   */
   const toggle = async (view: ServerView): Promise<void> => {
+    const wanted = !(pending[view.name] ?? view.enabled)
+    setPending((current) => ({ ...current, [view.name]: wanted }))
+    setRowError((current) => {
+      const next = { ...current }
+      delete next[view.name]
+      return next
+    })
+    setProbe(undefined)
     try {
-      await api.setEnabled(view.name, !view.enabled)
-      await refresh()
-      if (selected === view.name) await api.detail(view.name)
+      const updated = await api.setEnabled(view.name, wanted)
+      setServers((current) => current.map((item) => (item.name === updated.name ? updated : item)))
+      await settle(view.name, wanted)
     } catch (error) {
-      setFailure(message(error))
+      clearPending(view.name)
+      setRowError((current) => ({ ...current, [view.name]: message(error) }))
     }
+  }
+
+  /** Wait for the profile write to land, then let the list be the truth again. */
+  const settle = async (name: string, wanted: boolean): Promise<void> => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await delay(500 * (attempt + 1))
+      let list: ServerView[]
+      try {
+        list = await api.list()
+      } catch (error) {
+        setFailure(message(error))
+        break
+      }
+      setServers(list)
+      const row = list.find((item) => item.name === name)
+      if (row !== undefined && row.enabled !== wanted) continue
+      clearPending(name)
+      if (selected === name) {
+        try {
+          const next = await api.detail(name)
+          setProbe(next.probe)
+        } catch (error) {
+          setFailure(message(error))
+        }
+      }
+      return
+    }
+    clearPending(name)
   }
 
   const pickTool = (next: ProbeTool): void => {
@@ -173,7 +226,7 @@ export function McpPanel({ t }: PanelProps) {
       }}
     >
       <style>{STYLES}</style>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <div style={headerStyle}>
         <strong style={{ fontSize: 16 }}>{t('title')}</strong>
         <button type="button" className="mcpw-primary" onClick={() => setEditor({ mode: 'add' })}>
           + {t('addServer')}
@@ -182,19 +235,17 @@ export function McpPanel({ t }: PanelProps) {
 
       {failure === undefined ? null : <div style={{ color: palette.danger }}>{failure}</div>}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(220px, 280px) minmax(240px, 340px) minmax(420px, 1fr)',
-          gap: 10,
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
-        <section style={panelStyle} aria-label={t('servers')}>
+      <div className="mcpw-split">
+        <section
+          data-testid="split-servers"
+          className="mcpw-divide-right"
+          style={columnStyle}
+          aria-label={t('servers')}
+        >
           <input
             style={inputStyle}
             placeholder={t('searchServers')}
+            aria-label={t('searchServers')}
             value={serverQuery}
             onChange={(event) => setServerQuery(event.target.value)}
           />
@@ -202,180 +253,218 @@ export function McpPanel({ t }: PanelProps) {
             {visibleServers.length === 0 ? (
               <div style={labelStyle}>{t('noServers')}</div>
             ) : (
-              visibleServers.map((view) => (
-                <div key={view.name} style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <RowButton
-                      active={view.name === selected}
-                      onClick={() => void select(view.name)}
-                      title={view.name}
-                      second={`${sourceLabel(view)} · ${view.transport} · ${view.enabled ? t('enabled') : t('disabled')}`}
-                      clamp={false}
-                    />
+              visibleServers.map((view) => {
+                const enabled = pending[view.name] ?? view.enabled
+                const busy = pending[view.name] !== undefined
+                return (
+                  <div key={view.name} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <RowButton
+                          active={view.name === selected}
+                          onClick={() => void select(view.name)}
+                          title={view.name}
+                          second={`${sourceLabel(view)} · ${view.transport} · ${enabled ? t('enabled') : t('disabled')}`}
+                          clamp={false}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="mcpw-switch"
+                        role="switch"
+                        aria-checked={enabled}
+                        aria-busy={busy}
+                        title={view.editable === false ? t('readOnly') : enabled ? t('disable') : t('enable')}
+                        aria-label={enabled ? t('disable') : t('enable')}
+                        disabled={view.editable === false}
+                        onClick={() => void toggle(view)}
+                      >
+                        <span />
+                      </button>
+                      <button
+                        type="button"
+                        className="mcpw-icon"
+                        title={t('editServer')}
+                        aria-label={t('editServer')}
+                        disabled={view.editable === false}
+                        onClick={() => setEditor({ mode: 'edit', view })}
+                      >
+                        ⚙
+                      </button>
+                    </div>
+                    {rowError[view.name] === undefined ? null : (
+                      <div style={{ color: palette.danger, fontSize: 12, paddingInlineStart: 8 }}>
+                        {rowError[view.name]}
+                      </div>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    className="mcpw-icon"
-                    title={view.editable === false ? t('readOnly') : view.enabled ? t('disable') : t('enable')}
-                    aria-label={view.enabled ? t('disable') : t('enable')}
-                    disabled={view.editable === false}
-                    onClick={() => void toggle(view)}
-                  >
-                    {view.enabled ? '◉' : '○'}
-                  </button>
-                  <button
-                    type="button"
-                    className="mcpw-icon"
-                    title={t('editServer')}
-                    aria-label={t('editServer')}
-                    disabled={view.editable === false}
-                    onClick={() => setEditor({ mode: 'edit', view })}
-                  >
-                    ⚙
-                  </button>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </section>
 
-        <section style={panelStyle} aria-label={t('tools')}>
-          {selected === undefined ? (
-            <div style={labelStyle}>{t('pickServer')}</div>
-          ) : probe === undefined ? (
-            <button type="button" className="mcpw-primary" onClick={() => void runProbe()} disabled={probing}>
-              {probing ? t('testing') : t('testConnection')}
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+          <div data-testid="bar-tools" className="mcpw-divide-bottom" style={barStyle}>
+            <button
+              type="button"
+              className="mcpw-primary"
+              disabled={selected === undefined || probing}
+              onClick={() => void runProbe()}
+            >
+              {probing ? t('testing') : probe === undefined ? t('testConnection') : t('testAgain')}
             </button>
-          ) : (
-            <>
-              <button type="button" className="mcpw-primary" onClick={() => void runProbe()} disabled={probing}>
-                {probing ? t('testing') : t('testAgain')}
-              </button>
-              <div style={labelStyle}>
-                {probe.ok
-                  ? `${probe.toolCount} ${t('toolsCount')} · ${durationText(probe.durationMs)}`
-                  : `${t('probeFailed')}: ${probe.error?.message ?? ''}`}
-              </div>
-              <input
-                style={inputStyle}
-                placeholder={t('searchTools')}
-                value={toolQuery}
-                onChange={(event) => setToolQuery(event.target.value)}
-              />
-              <div className="mcpw-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-                {visibleTools.length === 0 ? (
-                  <div style={labelStyle}>{t('noTools')}</div>
-                ) : (
-                  visibleTools.map((item) => (
-                    <RowButton
-                      key={item.name}
-                      active={item.name === tool?.name}
-                      onClick={() => pickTool(item)}
-                      title={item.name}
-                      second={item.description ?? t('noDescription')}
-                      clamp
-                    />
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </section>
+            <input
+              style={{ ...inputStyle, width: 220, flex: 'none' }}
+              placeholder={t('searchTools')}
+              aria-label={t('searchTools')}
+              disabled={tools.length === 0}
+              value={toolQuery}
+              onChange={(event) => setToolQuery(event.target.value)}
+            />
+          </div>
 
-        <section style={{ ...panelStyle, minWidth: 0 }} aria-label={t('toolDetail')}>
-          {tool === undefined ? (
-            <div style={labelStyle}>{t('pickTool')}</div>
-          ) : (
-            <>
-              <div style={{ flexShrink: 0 }}>
-                <div style={{ fontWeight: 600 }}>{tool.name}</div>
-                <div style={{ ...labelStyle, marginTop: 4, maxHeight: '28vh', overflow: 'auto' }}>
-                  {tool.description ?? t('noDescription')}
-                </div>
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                  flex: 1,
-                  minHeight: 320,
-                  borderTop: `1px solid ${palette.border}`,
-                  paddingTop: 8,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={labelStyle}>{t('tryCall')}</span>
-                  <button type="button" className="mcpw-primary" onClick={() => void send()} disabled={sending}>
-                    {sending ? t('sending') : t('send')}
-                  </button>
-                </div>
-                <textarea
-                  aria-label={t('arguments')}
-                  spellCheck={false}
-                  value={argsText}
-                  onChange={(event) => setArgsText(event.target.value)}
-                  style={{ ...inputStyle, height: '22vh', minHeight: 120 }}
-                />
-                {callError === undefined ? null : <div style={{ color: palette.danger }}>{callError}</div>}
-                {result === undefined ? (
-                  <div style={labelStyle}>{t('noResult')}</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minHeight: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {(['json', 'tree', 'raw'] as const).map((kind) => (
-                        <button
-                          key={kind}
-                          type="button"
-                          className={resultKind === kind ? 'mcpw-primary' : undefined}
-                          onClick={() => setResultKind(kind)}
-                        >
-                          {t(`view_${kind}`)}
-                        </button>
-                      ))}
-                      <span style={{ ...labelStyle, marginLeft: 'auto' }}>
-                        {result.ok ? t('succeeded') : t('failed')} · {durationText(result.durationMs)}
-                        {result.isError ? ` · ${t('toolError')}` : ''}
-                      </span>
-                    </div>
-                    {resultKind === 'raw' ? (
-                      <JsonText
-                        value={{
-                          request: { server: selected, ...(request ?? {}) },
-                          response: result.raw ?? { content: result.content, isError: result.isError },
-                        }}
-                      />
-                    ) : resultKind === 'tree' ? (
-                      <JsonTree
-                        value={result.raw ?? { content: result.content.map((block) => ({ ...block })) }}
-                        t={t}
-                      />
+          <div className="mcpw-split">
+            <section
+              data-testid="split-tools"
+              className="mcpw-divide-right"
+              style={columnStyle}
+              aria-label={t('tools')}
+            >
+              {selected === undefined ? (
+                <div style={labelStyle}>{t('pickServer')}</div>
+              ) : probe === undefined ? (
+                <div style={labelStyle}>{t('notProbed')}</div>
+              ) : (
+                <>
+                  <div style={labelStyle}>
+                    {probe.ok
+                      ? `${probe.toolCount} ${t('toolsCount')} · ${durationText(probe.durationMs)}`
+                      : `${t('probeFailed')}: ${probe.error?.message ?? ''}`}
+                  </div>
+                  <div className="mcpw-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                    {visibleTools.length === 0 ? (
+                      <div style={labelStyle}>{t('noTools')}</div>
                     ) : (
-                      <div
-                        className="mcpw-scroll"
-                        style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minHeight: 0 }}
-                      >
-                        {result.content.length === 0 ? (
-                          <div style={labelStyle}>{t('emptyResult')}</div>
-                        ) : (
-                          result.content.map((block, index) => (
-                            <pre
-                              key={index}
-                              className="mcpw-code"
-                              style={{ background: palette.input, padding: 6, borderRadius: 8 }}
+                      visibleTools.map((item) => (
+                        <RowButton
+                          key={item.name}
+                          active={item.name === tool?.name}
+                          onClick={() => pickTool(item)}
+                          title={item.name}
+                          second={item.description ?? t('noDescription')}
+                          clamp
+                        />
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </section>
+
+            <div className="mcpw-rows">
+              <section
+                data-testid="cell-description"
+                className="mcpw-divide-bottom"
+                style={{ ...columnStyle, overflow: 'hidden' }}
+                aria-label={t('toolDetail')}
+              >
+                {tool === undefined ? (
+                  <div style={labelStyle}>{t('pickTool')}</div>
+                ) : (
+                  <>
+                    <div style={{ fontWeight: 600, flexShrink: 0 }}>{tool.name}</div>
+                    <div
+                      className="mcpw-scroll"
+                      style={{ ...labelStyle, flex: 1, minHeight: 0, whiteSpace: 'pre-wrap' }}
+                    >
+                      {tool.description ?? t('noDescription')}
+                    </div>
+                  </>
+                )}
+              </section>
+
+              <section data-testid="cell-call" style={columnStyle} aria-label={t('tryCall')}>
+                {tool === undefined ? (
+                  <div style={labelStyle}>{t('pickTool')}</div>
+                ) : (
+                  <>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}
+                    >
+                      <span style={labelStyle}>{t('tryCall')}</span>
+                      <button type="button" className="mcpw-primary" onClick={() => void send()} disabled={sending}>
+                        {sending ? t('sending') : t('send')}
+                      </button>
+                    </div>
+                    <textarea
+                      aria-label={t('arguments')}
+                      spellCheck={false}
+                      value={argsText}
+                      onChange={(event) => setArgsText(event.target.value)}
+                      style={{ ...inputStyle, height: '18vh', minHeight: 96, flexShrink: 0 }}
+                    />
+                    {callError === undefined ? null : <div style={{ color: palette.danger }}>{callError}</div>}
+                    {result === undefined ? (
+                      <div style={labelStyle}>{t('noResult')}</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minHeight: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          {(['json', 'tree', 'raw'] as const).map((kind) => (
+                            <button
+                              key={kind}
+                              type="button"
+                              className={resultKind === kind ? 'mcpw-primary' : undefined}
+                              onClick={() => setResultKind(kind)}
                             >
-                              {contentText(block)}
-                            </pre>
-                          ))
+                              {t(`view_${kind}`)}
+                            </button>
+                          ))}
+                          <span style={{ ...labelStyle, marginLeft: 'auto' }}>
+                            {result.ok ? t('succeeded') : t('failed')} · {durationText(result.durationMs)}
+                            {result.isError ? ` · ${t('toolError')}` : ''}
+                          </span>
+                        </div>
+                        {resultKind === 'raw' ? (
+                          <JsonText
+                            value={{
+                              request: { server: selected, ...(request ?? {}) },
+                              response: result.raw ?? { content: result.content, isError: result.isError },
+                            }}
+                          />
+                        ) : resultKind === 'tree' ? (
+                          <JsonTree
+                            value={result.raw ?? { content: result.content.map((block) => ({ ...block })) }}
+                            t={t}
+                          />
+                        ) : (
+                          <div
+                            className="mcpw-scroll"
+                            style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minHeight: 0 }}
+                          >
+                            {result.content.length === 0 ? (
+                              <div style={labelStyle}>{t('emptyResult')}</div>
+                            ) : (
+                              result.content.map((block, index) => (
+                                <pre
+                                  key={index}
+                                  className="mcpw-code"
+                                  style={{ background: palette.input, padding: 6, borderRadius: 8 }}
+                                >
+                                  {contentText(block)}
+                                </pre>
+                              ))
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
-              </div>
-            </>
-          )}
-        </section>
+              </section>
+            </div>
+          </div>
+        </div>
       </div>
 
       {editor === undefined ? null : (
