@@ -4,8 +4,6 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-23
-
 ### Added
 
 - A **Settings → Plugins → MCP Workbench** page that lists the three sources of MCP servers: the static `@deepseek-ai/dsh-mcp-client` rows of the profile, the servers this bundle owns, and the servers other plugins registered on `mcpManager`.
@@ -17,11 +15,15 @@ All notable changes to this project are documented here. The format follows [Kee
 - An English and a Chinese locale for the page and the bundle metadata.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
 - A vitest suite of 134 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real.
-- GitHub Actions: the verification pipeline and a Git Flow guard on pull request sources.
+- GitHub Actions: the verification pipeline, a check that a pull request comes from a branch of the right kind, and a Conventional Commit check.
+
+### Changed
+
+- The repository is organised around `main` and `release/<minor>`, with every contribution landing on `main` through a pull request and a merge commit; there is no `develop` branch.
 
 ### Fixed
 
 - A profile row inserted by the patch reported empty `env` and `headers`, because its raw config arrives in the inherited layer while the override stays empty; saving such a row would have written the config without its environment.
+- The page used theme tokens that do not exist, so its text, borders, cards and buttons kept the light palette in dark mode; every colour now comes from a real `--dsw-alias-*` token.
 
-[Unreleased]: https://github.com/fhffug/mcp-manager/compare/v0.1.0...develop
-[0.1.0]: https://github.com/fhffug/mcp-manager/releases/tag/v0.1.0
+[Unreleased]: https://github.com/fhffug/mcp-manager/commits/main

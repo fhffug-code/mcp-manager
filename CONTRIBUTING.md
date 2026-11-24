@@ -1,9 +1,12 @@
 # Contributing
 
+If you are an agent working in this repository, read [AGENTS.md](AGENTS.md) instead: it covers how to
+run commands on this machine, the verification loop and the definition of done.
+
 ## Setup
 
 ```sh
-git switch develop
+git switch main
 npm ci
 npm run build
 npm test
@@ -41,4 +44,7 @@ CI runs exactly these on Node 22, plus the coverage run. Keep the branch green b
 
 ## Branches and commits
 
-Git Flow, Conventional Commits, `--no-ff` merges: see [docs/GITFLOW.md](docs/GITFLOW.md). A `main` pull request must come from `release/*` or `hotfix/*`.
+Cut a branch from `main`, named `<type>/<slug>` after the Conventional Commit type it carries
+(`feature/`, `fix/`, `chore/`, `docs/`, `test/`, `ci/`, `refactor/`, `perf/`); a release is cut on a
+`release/<minor>` branch. Everything lands through a pull request against `main` with a merge commit —
+never a squash, never a rebase. Details, including the fork workflow, in [docs/GITFLOW.md](docs/GITFLOW.md).
