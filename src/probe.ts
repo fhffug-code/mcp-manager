@@ -12,7 +12,12 @@ export interface ProbeOptions {
   toolCallTimeoutMs: number
   maxToolSchemas: number
   resultMaxBytes: number
+  /** Resolves a `${credential:NAME}` reference; without it every reference counts as unresolved. */
+  credentials?: (name: string) => Promise<string | undefined>
 }
+
+/** A reference the manager would resolve before it connects. */
+const CREDENTIAL_PATTERN = /\$\{credential:([^}]+)\}/g
 
 /** Names whose values must never reach a spawned server through the inherited environment. */
 const SECRET_ENV_PATTERN = /(TOKEN|KEY|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL)/i
@@ -53,12 +58,14 @@ function createTransport(spec: McpServerSpec): StdioClientTransport | Streamable
   })
 }
 
-/** Credential references the Host never resolved for this server. */
-export function unresolvedCredentials(spec: McpServerSpec): string[] {
+/** Credential references this server's configuration carries, in the order they appear. */
+export function credentialNames(spec: McpServerSpec): string[] {
   const found: string[] = []
   const scan = (value: string): void => {
-    const match = /\$\{credential:([^}]+)\}/.exec(value)
-    if (match !== null) found.push(match[1] ?? '')
+    for (const match of value.matchAll(CREDENTIAL_PATTERN)) {
+      const name = match[1] ?? ''
+      if (name !== '' && !found.includes(name)) found.push(name)
+    }
   }
   const walk = (record: Record<string, string> | undefined): void => {
     for (const value of Object.values(record ?? {})) scan(value)
@@ -70,6 +77,45 @@ export function unresolvedCredentials(spec: McpServerSpec): string[] {
   walk(spec.env)
   walk(spec.headers)
   return found
+}
+
+/**
+ * Replace every `${credential:NAME}` with the value the store holds for it.
+ *
+ * Returns the names that hold no value: the caller reports those as a credential failure instead of
+ * sending the template to the server.
+ */
+async function expandCredentials(
+  spec: McpServerSpec,
+  resolve: ((name: string) => Promise<string | undefined>) | undefined,
+): Promise<{ spec: McpServerSpec; missing: string[] }> {
+  const names = credentialNames(spec)
+  if (names.length === 0) return { spec, missing: [] }
+  if (resolve === undefined) return { spec, missing: names }
+  const values = new Map<string, string>()
+  const missing: string[] = []
+  for (const name of names) {
+    const value = await resolve(name)
+    if (value === undefined || value === '') missing.push(name)
+    else values.set(name, value)
+  }
+  if (missing.length > 0) return { spec, missing }
+  const swap = (value: string): string =>
+    value.replace(CREDENTIAL_PATTERN, (_whole, name: string) => values.get(name) ?? '')
+  const swapRecord = (record: Record<string, string> | undefined): Record<string, string> | undefined => {
+    if (record === undefined) return undefined
+    const next: Record<string, string> = {}
+    for (const [key, value] of Object.entries(record)) next[key] = swap(value)
+    return next
+  }
+  const next: McpServerSpec = { ...spec }
+  if (spec.command !== undefined) next.command = swap(spec.command)
+  if (spec.url !== undefined) next.url = swap(spec.url)
+  if (spec.cwd !== undefined) next.cwd = swap(spec.cwd)
+  if (spec.args !== undefined) next.args = spec.args.map(swap)
+  if (spec.env !== undefined) next.env = swapRecord(spec.env)
+  if (spec.headers !== undefined) next.headers = swapRecord(spec.headers)
+  return { spec: next, missing: [] }
 }
 
 /** Which stage a connection or protocol failure belongs to, from what the failure says. */
@@ -251,15 +297,15 @@ export async function probeServer(
 ): Promise<ProbeResult> {
   const started = Date.now()
   const probedAt = new Date().toISOString()
-  const unresolved = unresolvedCredentials(spec)
-  if (unresolved.length > 0) {
+  const expanded = await expandCredentials(spec, options.credentials)
+  if (expanded.missing.length > 0) {
     return failedProbe(probedAt, 0, {
       stage: 'credential',
-      message: `unresolved credential reference: ${unresolved.join(', ')}`,
+      message: `unresolved credential reference: ${expanded.missing.join(', ')}`,
     })
   }
   try {
-    return await withClient(spec, options.probeTimeoutMs, signal, async (client) => {
+    return await withClient(expanded.spec, options.probeTimeoutMs, signal, async (client) => {
       const listed = await withDeadline(
         listTools(client, options.maxToolSchemas),
         options.probeTimeoutMs,
@@ -309,19 +355,19 @@ export async function callServerTool(
       error: { stage: 'tools-call', message: 'tool name is required' },
     }
   }
-  const unresolved = unresolvedCredentials(spec)
-  if (unresolved.length > 0) {
+  const expanded = await expandCredentials(spec, options.credentials)
+  if (expanded.missing.length > 0) {
     return {
       ok: false,
       content: [],
       isError: false,
       truncated: false,
       durationMs: 0,
-      error: { stage: 'credential', message: `unresolved credential reference: ${unresolved.join(', ')}` },
+      error: { stage: 'credential', message: `unresolved credential reference: ${expanded.missing.join(', ')}` },
     }
   }
   try {
-    return await withClient(spec, options.probeTimeoutMs, signal, async (client) => {
+    return await withClient(expanded.spec, options.probeTimeoutMs, signal, async (client) => {
       const called = await withDeadline(
         client.callTool({ name: request.tool, arguments: request.arguments ?? {} }),
         options.toolCallTimeoutMs,

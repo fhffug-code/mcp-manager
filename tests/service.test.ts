@@ -4,7 +4,7 @@ import { WorkbenchFailure } from '../src/failures.js'
 import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
 import { PLUGIN_NAME } from '../src/version.js'
 import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN } from '../src/inventory.js'
-import { entry, fakeContext, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
+import { entry, fakeContext, fakeCredentials, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
 
 const clientLayer = (id: string, name: string, config: Record<string, unknown>) => ({
   entry: entry({ id, name: MCP_CLIENT_PLUGIN, config }),
@@ -58,6 +58,7 @@ function harness(
     managerService?: boolean
     pluginManager?: ReturnType<typeof fakePluginManager>
     pluginService?: boolean
+    credentials?: ReturnType<typeof fakeCredentials>
   } = {},
 ): Harness {
   let servers = options.servers ?? {}
@@ -69,6 +70,7 @@ function harness(
     ...(options.editor === false ? {} : { editor }),
     ...(options.managerService === false ? {} : { manager }),
     ...(options.pluginService === false ? {} : { pluginManager }),
+    ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
   })
   const workbench = new Workbench({
     ctx,
@@ -149,6 +151,28 @@ describe('probe and call', () => {
     })
     const result = await workbench.call('creds', { tool: 'echo' })
     expect(result).toMatchObject({ ok: false, content: [], error: { stage: 'credential' } })
+  })
+
+  it('asks the credential store before it connects', async () => {
+    const credentials = fakeCredentials({ A: 'stored-secret' })
+    const { workbench } = harness({
+      servers: { creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } } },
+      credentials,
+    })
+    const result = await workbench.probe('creds')
+    expect(credentials.asked).toEqual(['A'])
+    expect(result.error?.stage).not.toBe('credential')
+  })
+
+  it('reports a credential the store does not hold', async () => {
+    const credentials = fakeCredentials()
+    const { workbench } = harness({
+      servers: { creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } } },
+      credentials,
+    })
+    const result = await workbench.probe('creds')
+    expect(result).toMatchObject({ ok: false, durationMs: 0, error: { stage: 'credential' } })
+    expect(credentials.asked).toEqual(['A'])
   })
 
   it('refuses a call to a server with no transport', async () => {

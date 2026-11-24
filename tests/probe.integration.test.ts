@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { callServerTool, probeServer, unresolvedCredentials } from '../src/probe.js'
+import { callServerTool, credentialNames, probeServer } from '../src/probe.js'
 import type { ProbeOptions } from '../src/probe.js'
 import type { McpServerSpec } from '../src/config.js'
 
@@ -65,6 +65,28 @@ describe('probeServer', () => {
     const result = await probeServer(stdio({ env: { TOKEN: '${credential:GITHUB_TOKEN}' } }), options)
     expect(result).toMatchObject({ ok: false, durationMs: 0, error: { stage: 'credential' } })
     expect(result.error?.message).toContain('GITHUB_TOKEN')
+  })
+
+  it('resolves a credential the store holds before it connects', async () => {
+    const asked: string[] = []
+    const result = await probeServer(stdio({ env: { TOKEN: '${credential:GITHUB_TOKEN}' } }), {
+      ...options,
+      credentials: async (name) => {
+        asked.push(name)
+        return name === 'GITHUB_TOKEN' ? 'stored-secret' : undefined
+      },
+    })
+    expect(result.ok).toBe(true)
+    expect(asked).toEqual(['GITHUB_TOKEN'])
+  })
+
+  it('names the credential whose value is missing', async () => {
+    const result = await probeServer(stdio({ env: { TOKEN: '${credential:EMPTY}' } }), {
+      ...options,
+      credentials: async () => undefined,
+    })
+    expect(result).toMatchObject({ ok: false, durationMs: 0, error: { stage: 'credential' } })
+    expect(result.error?.message).toContain('EMPTY')
   })
 
   it('stops when the caller aborts', async () => {
@@ -135,19 +157,28 @@ describe('callServerTool', () => {
     const result = await callServerTool(stdio({ args: [FIXTURE, '${credential:A}'] }), options, { tool: 'echo' })
     expect(result).toMatchObject({ ok: false, durationMs: 0, error: { stage: 'credential' } })
   })
+
+  it('resolves a credential for a call too', async () => {
+    const result = await callServerTool(
+      stdio({ args: [FIXTURE, '${credential:A}'] }),
+      { ...options, credentials: async () => 'value' },
+      { tool: 'echo', arguments: { message: 'hi' } },
+    )
+    expect(result).toMatchObject({ ok: true, content: [{ type: 'text', text: 'echo: hi' }] })
+  })
 })
 
-describe('unresolvedCredentials', () => {
+describe('credentialNames', () => {
   it('scans every field the server would receive', () => {
     expect(
-      unresolvedCredentials({
+      credentialNames({
         transport: 'streamable-http',
         url: 'https://x/${credential:URL_TOKEN}',
         headers: { Authorization: '${credential:HEADER_TOKEN}' },
       }),
     ).toEqual(['URL_TOKEN', 'HEADER_TOKEN'])
     expect(
-      unresolvedCredentials({
+      credentialNames({
         transport: 'stdio',
         command: '/bin/${credential:CMD}',
         args: ['${credential:ARG}'],
@@ -155,6 +186,16 @@ describe('unresolvedCredentials', () => {
         env: { A: '${credential:ENV}' },
       }),
     ).toEqual(['CMD', 'CWD', 'ARG', 'ENV'])
-    expect(unresolvedCredentials({ transport: 'stdio', command: 'node' })).toEqual([])
+    expect(credentialNames({ transport: 'stdio', command: 'node' })).toEqual([])
+  })
+
+  it('names a reference once even when it appears twice', () => {
+    expect(
+      credentialNames({
+        transport: 'stdio',
+        command: 'node',
+        env: { A: '${credential:SAME}', B: 'x${credential:SAME}' },
+      }),
+    ).toEqual(['SAME'])
   })
 })

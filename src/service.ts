@@ -13,6 +13,7 @@ import {
 import { PLUGIN_NAME } from './version.js'
 import type {
   DshConfigEditor,
+  DshCredentialsFace,
   DshHostContext,
   DshLoaderEntry,
   DshMcpManager,
@@ -114,6 +115,19 @@ export class Workbench {
 
   // -- probes and calls --------------------------------------------------------
 
+  /**
+   * The value behind a `${credential:NAME}` reference.
+   *
+   * The store layers its own keys over the launching environment, exactly as the manager does when it
+   * connects; an absent service means every reference stays unresolved.
+   */
+  private async resolveCredential(name: string): Promise<string | undefined> {
+    const credentials = this.options.ctx.get<DshCredentialsFace>('credentials')
+    if (credentials === undefined) return undefined
+    const hit = await credentials.resolve(name)
+    return hit?.value
+  }
+
   async probe(name: string, options: { force?: boolean } = {}, signal?: AbortSignal): Promise<ProbeResult> {
     const server = this.require(name)
     if (server.spec === undefined) {
@@ -131,6 +145,7 @@ export class Workbench {
       toolCallTimeoutMs: config.toolCallTimeoutMs,
       maxToolSchemas: config.maxToolSchemas,
       resultMaxBytes: config.resultMaxBytes,
+      credentials: (credential: string) => this.resolveCredential(credential),
     }
     const spec = server.spec
     const work = probeServer(spec, budgets, signal).then((result) => {
@@ -159,6 +174,7 @@ export class Workbench {
         toolCallTimeoutMs: config.toolCallTimeoutMs,
         maxToolSchemas: config.maxToolSchemas,
         resultMaxBytes: config.resultMaxBytes,
+        credentials: (credential: string) => this.resolveCredential(credential),
       },
       request,
       signal,

@@ -4,6 +4,7 @@ import type {
   DshConfigEditor,
   DshConfigLayer,
   DshConnection,
+  DshCredentialsFace,
   DshHostContext,
   DshLoaderEntry,
   DshManagedServerView,
@@ -98,6 +99,23 @@ export function fakePluginManager(options: FakePluginManagerOptions = {}): FakeP
   }
 }
 
+export interface FakeCredentials extends DshCredentialsFace {
+  asked: string[]
+}
+
+/** The credential store, holding the values a test hands it. */
+export function fakeCredentials(values: Record<string, string> = {}): FakeCredentials {
+  const asked: string[] = []
+  return {
+    asked,
+    async resolve(ref) {
+      asked.push(ref)
+      const value = values[ref]
+      return value === undefined ? undefined : { value }
+    },
+  }
+}
+
 export interface FakeContext extends DshHostContext {
   logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> }
   effects: string[]
@@ -109,6 +127,7 @@ export interface FakeContextOptions {
   tools?: DshToolRegistry
   connection?: DshConnection
   pluginManager?: DshPluginManagerFace
+  credentials?: DshCredentialsFace
 }
 
 /** The host context, with only the services a test asked for. */
@@ -117,6 +136,7 @@ export function fakeContext(options: FakeContextOptions = {}): FakeContext {
     configEditor: options.editor,
     mcpManager: options.manager,
     pluginManager: options.pluginManager,
+    credentials: options.credentials,
     tools: options.tools,
     connection: options.connection,
   }
