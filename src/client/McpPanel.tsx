@@ -17,7 +17,13 @@ export interface PanelProps {
 }
 
 const sourceLabel = (view: ServerView): string =>
-  view.source === 'profile' ? 'profile' : view.source === 'plugin' ? 'plugin' : 'manager'
+  view.source === 'profile'
+    ? 'profile'
+    : view.source === 'managed'
+      ? 'managed'
+      : view.source === 'plugin'
+        ? 'plugin'
+        : 'manager'
 
 const matches = (text: string, query: string): boolean =>
   query.trim() === '' || text.toLowerCase().includes(query.trim().toLowerCase())
