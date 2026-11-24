@@ -13,11 +13,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - Search boxes over the server list and the tool list, and tool rows that keep their description to two lines.
 - In-place editing of a profile row through `configEditor.edit()`, with the raw layer preserved, `!!js` expressions round-tripped, and optional fields cleared with `null`.
 - Adding, removing, enabling, disabling and restarting the servers this bundle owns, stored in its own config row.
-- Probing a server over its own throwaway MCP connection: tool names, descriptions, input schemas, timings, a name and schema budget, and a staged failure report.
+- Probing a server over its own MCP session: tool names, descriptions, input schemas, timings, a name and schema budget, and a staged failure report. The session is opened on first use, reused by later probes and test calls, and closed when the server is written, restarted, or the plugin stops.
 - A `mcp_workbench` tool with `list`, `detail`, `probe`, `call`, `save`, `add`, `remove`, `setEnabled` and `restart`; every change needs `confirm: true`.
 - An English and a Chinese locale for the page and the bundle metadata.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
-- A vitest suite of 165 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, and a jsdom test of the page's switch and its bands.
+- A vitest suite of 193 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, a unit suite over the connection pool, and a jsdom test of the page's switch and its bands.
 - GitHub Actions: the verification pipeline, a check that a pull request comes from a branch of the right kind, and a Conventional Commit check.
 
 ### Changed
@@ -33,5 +33,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - A switch the plugin manager could not apply was reported as done and then reverted two seconds later. The plugin manager answers `overridden` for a row the profile patch inserts, because a patch layer cannot override a row it inserts itself, so the switch is now refused with that reason and the row keeps its state.
 - A profile row inserted by the patch reported empty `env` and `headers`, because its raw config arrives in the inherited layer while the override stays empty; saving such a row would have written the config without its environment.
 - The page used theme tokens that do not exist, so its text, borders, cards and buttons kept the light palette in dark mode; every colour now comes from a real `--dsw-alias-*` token.
+- Test connection and test calls opened a new MCP session, and a new process, on every request: a streamable HTTP server saw one session per click. One session per server is now kept and reused, and a call whose session died is reported instead of being replayed.
 
 [Unreleased]: https://github.com/fhffug/mcp-manager/commits/main

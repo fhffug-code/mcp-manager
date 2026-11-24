@@ -1,9 +1,10 @@
-/** Temporary MCP connections: probe a server and call one of its tools. */
-import { Client } from '@modelcontextprotocol/client'
+/** MCP work over a live connection: probe a server and call one of its tools. */
+import type { Client } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import type { ConnectionPool } from './connection.js'
 import type { McpServerSpec } from './config.js'
-import { PLUGIN_VERSION } from './version.js'
+import { withDeadline } from './deadline.js'
 import type { CallContent, CallResult, ProbeError, ProbeResult, ProbeStage, ProbeTool } from './types/index.js'
 
 /** Budgets shared by every connection this plugin opens. */
@@ -42,8 +43,8 @@ function childEnvironment(explicit: Record<string, string> = {}): Record<string,
   return { ...environment, ...explicit }
 }
 
-/** Build the transport a spec describes. */
-function createTransport(spec: McpServerSpec): StdioClientTransport | StreamableHTTPClientTransport {
+/** Build the transport a spec describes; the pool opens one of these per session. */
+export function transportFor(spec: McpServerSpec): StdioClientTransport | StreamableHTTPClientTransport {
   if (spec.transport === 'stdio') {
     return new StdioClientTransport({
       command: spec.command ?? '',
@@ -132,56 +133,18 @@ function stageOf(error: unknown, fallback: ProbeStage): ProbeStage {
   return fallback
 }
 
-/** Run one body against a freshly connected client and always close it. */
-async function withClient<T>(
-  spec: McpServerSpec,
-  timeoutMs: number,
-  signal: AbortSignal | undefined,
-  body: (client: Client) => Promise<T>,
-): Promise<T> {
-  const client = new Client({ name: 'dsh-mcp-workbench', version: PLUGIN_VERSION }, { capabilities: {} })
-  const controller = new AbortController()
-  const forward = (): void => controller.abort(signal?.reason)
-  if (signal?.aborted === true) forward()
-  signal?.addEventListener('abort', forward, { once: true })
-  if (controller.signal.aborted) throw controller.signal.reason ?? new Error('MCP connection aborted')
-  try {
-    await client.connect(createTransport(spec), { signal: controller.signal, timeout: timeoutMs })
-    return await body(client)
-  } finally {
-    signal?.removeEventListener('abort', forward)
-    try {
-      await client.close()
-    } catch {
-      // The result already reports what happened; a failed cleanup adds nothing.
-    }
-  }
-}
-
-/** Settle a body within its own budget instead of the transport's. */
-async function withDeadline<T>(work: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), timeoutMs)
-  })
-  try {
-    return await Promise.race([work, deadline])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
 /** Every tool a server lists, bounded by pages, names and the schema budget. */
 async function listTools(
   client: Client,
   maxSchemas: number,
+  signal: AbortSignal | undefined,
 ): Promise<{ items: ProbeTool[]; total: number; truncated: boolean }> {
   const items: ProbeTool[] = []
   let total = 0
   let truncated = false
   let cursor: string | undefined
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const listed = await client.listTools(cursor === undefined ? undefined : { cursor })
+    const listed = await client.listTools(cursor === undefined ? undefined : { cursor }, { signal })
     for (const tool of listed.tools ?? []) {
       total += 1
       const schemaOmitted = items.length >= maxSchemas
@@ -289,8 +252,10 @@ const failedProbe = (probedAt: string, durationMs: number, error: ProbeError): P
   error,
 })
 
-/** Connect, read the server identity, and list its tools without registering anything. */
+/** Connect if needed, read the server identity, and list its tools without registering anything. */
 export async function probeServer(
+  connections: ConnectionPool,
+  name: string,
   spec: McpServerSpec,
   options: ProbeOptions,
   signal?: AbortSignal,
@@ -305,30 +270,37 @@ export async function probeServer(
     })
   }
   try {
-    return await withClient(expanded.spec, options.probeTimeoutMs, signal, async (client) => {
-      const listed = await withDeadline(
-        listTools(client, options.maxToolSchemas),
-        options.probeTimeoutMs,
-        'MCP tools/list timed out',
-      )
-      const info = client.getServerVersion()
-      return {
-        ok: true,
-        ...(info === undefined
-          ? {}
-          : {
-              serverInfo: {
-                ...(typeof info.name === 'string' ? { name: info.name } : {}),
-                ...(typeof info.version === 'string' ? { version: info.version } : {}),
-              },
-            }),
-        toolCount: listed.total,
-        tools: listed.items,
-        truncated: listed.truncated,
-        durationMs: Date.now() - started,
-        probedAt,
-      }
-    })
+    return await connections.use(
+      name,
+      expanded.spec,
+      { connectTimeoutMs: options.probeTimeoutMs },
+      signal,
+      async (client) => {
+        const listed = await withDeadline(
+          listTools(client, options.maxToolSchemas, signal),
+          options.probeTimeoutMs,
+          'MCP tools/list timed out',
+        )
+        const info = client.getServerVersion()
+        return {
+          ok: true,
+          ...(info === undefined
+            ? {}
+            : {
+                serverInfo: {
+                  ...(typeof info.name === 'string' ? { name: info.name } : {}),
+                  ...(typeof info.version === 'string' ? { version: info.version } : {}),
+                },
+              }),
+          toolCount: listed.total,
+          tools: listed.items,
+          truncated: listed.truncated,
+          durationMs: Date.now() - started,
+          probedAt,
+        }
+      },
+      { retryOnDisconnect: true },
+    )
   } catch (error) {
     return failedProbe(probedAt, Date.now() - started, {
       stage: stageOf(error, 'initialize'),
@@ -337,8 +309,10 @@ export async function probeServer(
   }
 }
 
-/** Connect and call one tool with the arguments the caller supplied. */
+/** Connect if needed and call one tool with the arguments the caller supplied. */
 export async function callServerTool(
+  connections: ConnectionPool,
+  name: string,
   spec: McpServerSpec,
   options: ProbeOptions,
   request: { tool: string; arguments?: Record<string, unknown> },
@@ -367,23 +341,34 @@ export async function callServerTool(
     }
   }
   try {
-    return await withClient(expanded.spec, options.probeTimeoutMs, signal, async (client) => {
-      const called = await withDeadline(
-        client.callTool({ name: request.tool, arguments: request.arguments ?? {} }),
-        options.toolCallTimeoutMs,
-        'MCP tools/call timed out',
-      )
-      const blocks = Array.isArray(called.content) ? called.content : []
-      const normalized = normalizeContent(blocks, options.resultMaxBytes)
-      return {
-        ok: true,
-        content: normalized.content,
-        isError: called.isError === true,
-        truncated: normalized.truncated,
-        durationMs: Date.now() - started,
-        raw: boundedRaw(called, options.resultMaxBytes),
-      }
-    })
+    return await connections.use(
+      name,
+      expanded.spec,
+      { connectTimeoutMs: options.probeTimeoutMs },
+      signal,
+      async (client) => {
+        const called = await withDeadline(
+          client.callTool(
+            { name: request.tool, arguments: request.arguments ?? {} },
+            signal === undefined ? {} : { signal },
+          ),
+          options.toolCallTimeoutMs,
+          'MCP tools/call timed out',
+        )
+        const blocks = Array.isArray(called.content) ? called.content : []
+        const normalized = normalizeContent(blocks, options.resultMaxBytes)
+        return {
+          ok: true,
+          content: normalized.content,
+          isError: called.isError === true,
+          truncated: normalized.truncated,
+          durationMs: Date.now() - started,
+          raw: boundedRaw(called, options.resultMaxBytes),
+        }
+      },
+      // A tool call may have run on the server, so a dead session is reported, never replayed.
+      { retryOnDisconnect: false },
+    )
   } catch (error) {
     return {
       ok: false,

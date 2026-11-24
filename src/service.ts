@@ -1,8 +1,9 @@
 /** Every operation, implemented once; the settings page and the model tool both call this. */
+import { ConnectionPool } from './connection.js'
 import { applyPatch, expressionPath, validatePatched } from './edit.js'
 import { WorkbenchFailure } from './failures.js'
 import { readInventory, type InventorySource, type ResolvedServer } from './inventory.js'
-import { callServerTool, probeServer } from './probe.js'
+import { callServerTool, probeServer, transportFor } from './probe.js'
 import {
   SERVER_NAME_PATTERN,
   normalizeServerSpec,
@@ -29,6 +30,8 @@ export interface WorkbenchOptions {
   config(): WorkbenchConfig
   /** Called after the stored server map changed, so the caller's view of the config stays current. */
   applyServers?(servers: Record<string, McpServerSpec>): void
+  /** Replaced in tests; the plugin keeps one pool for its whole lifetime. */
+  connections?: ConnectionPool
 }
 
 export interface ServerDetail {
@@ -47,8 +50,11 @@ export class Workbench {
   private readonly probes = new Map<string, { result: ProbeResult; expiresAt: number }>()
   private readonly inflight = new Map<string, Promise<ProbeResult>>()
   private readonly registered = new Map<string, () => void>()
+  private readonly connections: ConnectionPool
 
-  constructor(private readonly options: WorkbenchOptions) {}
+  constructor(private readonly options: WorkbenchOptions) {
+    this.connections = options.connections ?? new ConnectionPool({ transportFor, logger: this.options.ctx.logger })
+  }
 
   // -- sources -----------------------------------------------------------------
 
@@ -148,7 +154,7 @@ export class Workbench {
       credentials: (credential: string) => this.resolveCredential(credential),
     }
     const spec = server.spec
-    const work = probeServer(spec, budgets, signal).then((result) => {
+    const work = probeServer(this.connections, name, spec, budgets, signal).then((result) => {
       this.probes.set(name, { result, expiresAt: Date.now() + config.probeCacheTtlMs })
       this.inflight.delete(name)
       return result
@@ -168,6 +174,8 @@ export class Workbench {
     }
     const config = this.options.config()
     const result = await callServerTool(
+      this.connections,
+      name,
       server.spec,
       {
         probeTimeoutMs: config.probeTimeoutMs,
@@ -222,8 +230,9 @@ export class Workbench {
       }
       return { ...current, servers: change(servers) }
     })
-    // The fleet is rebuilt from the new map, so a cached probe no longer describes the server.
+    // The fleet is rebuilt from the new map, so a cached probe and the live session no longer describe it.
     this.probes.delete(server.name)
+    await this.connections.close(server.name)
   }
 
   private async saveProfile(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
@@ -236,6 +245,7 @@ export class Workbench {
     }
     const editor = this.requireEditor()
     await editor.edit(entry, () => next)
+    await this.connections.close(server.name)
     return this.detail(server.name)
   }
 
@@ -251,6 +261,7 @@ export class Workbench {
       )
     }
     await this.writeServers({ ...this.options.config().servers, [server.name]: spec })
+    await this.connections.close(server.name)
     return this.detail(server.name)
   }
 
@@ -297,6 +308,7 @@ export class Workbench {
     const servers = { ...this.options.config().servers }
     delete servers[name]
     await this.writeServers(servers)
+    await this.connections.close(name)
   }
 
   async setEnabled(name: string, enabled: boolean): Promise<ServerView> {
@@ -315,6 +327,7 @@ export class Workbench {
     if (enabled) delete next.enabled
     else next.enabled = false
     await this.writeServers({ ...this.options.config().servers, [name]: next })
+    await this.connections.close(name)
     return this.require(name).view
   }
 
@@ -350,8 +363,9 @@ export class Workbench {
     }
     const outcome = applicationOf(await manager.setPluginEnabled(entryId, enabled))
     if (outcome !== 'overridden' && (await this.awaitEnabled(server.name, enabled))) {
-      // Switching a server changes the tool set, so the cached probe no longer describes it.
+      // Switching a server changes the tool set, so the cached probe and the session no longer describe it.
       this.probes.delete(server.name)
+      await this.connections.close(server.name)
       return this.require(server.name).view
     }
     throw new WorkbenchFailure('overridden', switchRefusal(entryId, outcome, enabled))
@@ -377,6 +391,7 @@ export class Workbench {
     const manager = this.manager()
     if (manager === undefined) throw new WorkbenchFailure('unsupported', 'the MCP manager service is not available')
     await manager.restart(name)
+    await this.connections.close(name)
     return this.detail(name).server
   }
 
@@ -414,6 +429,10 @@ export class Workbench {
       this.releaseAll()
       this.inflight.clear()
       this.probes.clear()
+      // Sessions outlive a request, so the plugin has to hand them back when it stops.
+      void this.connections.closeAll().catch((error: unknown) => {
+        this.options.ctx.logger.warn('mcp-workbench: closing the live sessions failed:', error)
+      })
     }
   }
 
