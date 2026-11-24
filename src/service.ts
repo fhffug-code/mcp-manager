@@ -173,7 +173,7 @@ export class Workbench {
       throw new WorkbenchFailure('invalid-config', `server "${name}" has no usable transport configuration`)
     }
     const config = this.options.config()
-    const result = await callServerTool(
+    return callServerTool(
       this.connections,
       name,
       server.spec,
@@ -187,7 +187,6 @@ export class Workbench {
       request,
       signal,
     )
-    return result
   }
 
   // -- writes ------------------------------------------------------------------
