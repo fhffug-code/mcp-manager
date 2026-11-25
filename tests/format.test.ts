@@ -3,10 +3,12 @@ import {
   contentText,
   draftOf,
   durationText,
+  joinArgs,
   parseArguments,
   patchOf,
   probeHeadline,
   rowsOf,
+  splitArgs,
 } from '../src/client/format.js'
 import type { ServerView } from '../src/types/index.js'
 
@@ -21,6 +23,29 @@ const view = (overrides: Partial<ServerView> = {}): ServerView => ({
   headers: { Accept: { value: 'application/json', secret: false } },
   timeouts: { toolCallTimeoutMs: 1000 },
   ...overrides,
+})
+
+describe('joinArgs and splitArgs', () => {
+  it('keeps an argument with a space in one piece', () => {
+    expect(joinArgs(['--directory', 'C:\\Program Files\\x', 'run'])).toBe('--directory "C:\\Program Files\\x" run')
+    expect(splitArgs('--directory "C:\\Program Files\\x" run')).toEqual(['--directory', 'C:\\Program Files\\x', 'run'])
+  })
+
+  it('repairs a list whose quoted path was split on its spaces', () => {
+    const broken = ['--directory', '"E:\\Program', 'Files\\Blender', 'Foundation\\blender_mcp"', 'run', 'blender-mcp']
+    expect(splitArgs(joinArgs(broken))).toEqual([
+      '--directory',
+      'E:\\Program Files\\Blender Foundation\\blender_mcp',
+      'run',
+      'blender-mcp',
+    ])
+  })
+
+  it('leaves a plain list alone', () => {
+    expect(splitArgs('  stdio   --flag  ')).toEqual(['stdio', '--flag'])
+    expect(splitArgs('')).toEqual([])
+    expect(joinArgs([])).toBe('')
+  })
 })
 
 describe('rowsOf', () => {

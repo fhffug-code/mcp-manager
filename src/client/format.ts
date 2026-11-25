@@ -31,6 +31,38 @@ export interface Draft {
   headers: Row[]
 }
 
+/** An argument list the way the one-line form holds it: an argument with a space is quoted. */
+export function joinArgs(args: readonly string[]): string {
+  return args.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(' ')
+}
+
+/** Split the one-line form back into arguments, keeping a quoted run together. */
+export function splitArgs(text: string): string[] {
+  const args: string[] = []
+  let current = ''
+  let quoted = false
+  let started = false
+  for (const char of text) {
+    if (char === '"') {
+      quoted = !quoted
+      started = true
+      continue
+    }
+    if (!quoted && /\s/.test(char)) {
+      if (started) {
+        args.push(current)
+        current = ''
+        started = false
+      }
+      continue
+    }
+    current += char
+    started = true
+  }
+  if (started) args.push(current)
+  return args
+}
+
 /** The editable form of one env or header map. */
 export function rowsOf(fields: Record<string, ServerField>): Row[] {
   return Object.entries(fields).map(([name, field]) => ({
@@ -48,7 +80,7 @@ export function rowsOf(fields: Record<string, ServerField>): Row[] {
 export function draftOf(view: ServerView): Draft {
   return {
     command: view.command ?? '',
-    args: (view.args ?? []).join(' '),
+    args: joinArgs(view.args ?? []),
     cwd: view.cwd ?? '',
     url: view.url ?? '',
     toolCallTimeoutMs: view.timeouts.toolCallTimeoutMs?.toString() ?? '',
@@ -88,7 +120,7 @@ export function patchOf(draft: Draft, transport: TransportKind): ServerPatch {
   const patch: ServerPatch = { transport }
   if (transport === 'stdio') {
     patch.command = blankToNull(draft.command)
-    patch.args = draft.args.trim() === '' ? null : draft.args.trim().split(/\s+/)
+    patch.args = draft.args.trim() === '' ? null : splitArgs(draft.args)
     patch.cwd = blankToNull(draft.cwd)
     const env = changedFields(draft.env)
     if (env !== undefined) patch.env = env

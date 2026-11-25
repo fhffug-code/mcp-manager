@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { ServerPatch, ServerView, TransportKind } from '../types/index.js'
 import type { Translate } from './context.js'
-import { draftOf, patchOf, type Draft, type Row } from './format.js'
+import { draftOf, patchOf, splitArgs, type Draft, type Row } from './format.js'
 import { inputStyle, labelStyle, palette, panelStyle } from './styles.js'
 
 export interface EditorProps {
@@ -116,7 +116,7 @@ export function ServerEditor({ view, t, onCancel, onAdd, onSave, onDelete }: Edi
     const spec: Record<string, unknown> = { transport }
     if (transport === 'stdio') {
       spec['command'] = command.trim()
-      if (args.trim() !== '') spec['args'] = args.trim().split(/\s+/)
+      if (args.trim() !== '') spec['args'] = splitArgs(args)
       if (cwd.trim() !== '') spec['cwd'] = cwd.trim()
       const values = valuesOf(env)
       if (values !== undefined) spec['env'] = values

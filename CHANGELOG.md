@@ -17,7 +17,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - A `mcp_workbench` tool with `list`, `detail`, `probe`, `call`, `save`, `add`, `remove`, `setEnabled` and `restart`; every change needs `confirm: true`.
 - An English and a Chinese locale for the page and the bundle metadata.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
-- A vitest suite of 186 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, a unit suite over the connection pool, and a jsdom test of the page's switch and its bands.
+- A vitest suite of 192 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, a unit suite over the connection pool, and a jsdom test of the page's switch and its bands.
 - GitHub Actions: the verification pipeline, a check that a pull request comes from a branch of the right kind, and a Conventional Commit check.
 
 ### Changed
@@ -36,5 +36,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - The page used theme tokens that do not exist, so its text, borders, cards and buttons kept the light palette in dark mode; every colour now comes from a real `--dsw-alias-*` token.
 - Test connection and test calls opened a new MCP session, and a new process, on every request: a streamable HTTP server saw one session per click. One session per server is now kept and reused, and a call whose session died is reported instead of being replayed.
 - The test suite is type-checked: `tsconfig.test.json` covers `src/` and `tests/`, `npm run typecheck` runs it, and the type errors the IDE was reporting (a mock logger, a textually typed status table, an untyped mock tuple) are fixed.
+- The argument list of a `stdio` server lost its quoting when the form read and wrote it, so a path with a space came back as several arguments. A quoted argument now survives the round trip, and a list that was already split that way is joined again.
 
 [Unreleased]: https://github.com/fhffug/mcp-manager/commits/main
