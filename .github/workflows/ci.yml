@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - 'release/**'
+      - release
       - 'feature/**'
       - 'fix/**'
       - 'chore/**'
@@ -15,7 +15,7 @@ on:
       - 'perf/**'
       - 'hotfix/**'
   pull_request:
-    branches: [main, 'release/**']
+    branches: [main, release]
 
 permissions:
   contents: read
@@ -68,23 +68,26 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: main takes any contribution branch
-        if: startsWith(github.base_ref, 'main')
+      - name: main takes any contribution branch and the release line
+        if: github.base_ref == 'main'
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           case "$HEAD_REF" in
-            feature/*|fix/*|chore/*|docs/*|test/*|ci/*|refactor/*|perf/*|release/*|hotfix/*|dependabot/*)
+            feature/*|fix/*|chore/*|docs/*|test/*|ci/*|refactor/*|perf/*|hotfix/*|dependabot/*)
               echo "$HEAD_REF may reach main"
               ;;
+            release)
+              echo "a back-merge from the release line may reach main"
+              ;;
             *)
-              echo "::error::$HEAD_REF must be named <type>/<slug> with a type of feature, fix, chore, docs, test, ci, refactor, perf, release or hotfix"
+              echo "::error::$HEAD_REF must be named <type>/<slug> with a type of feature, fix, chore, docs, test, ci, refactor, perf or hotfix, or be the release branch"
               exit 1
               ;;
           esac
 
       - name: a release branch only takes fixes and back-merges
-        if: startsWith(github.base_ref, 'release/')
+        if: github.base_ref == 'release'
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
@@ -96,7 +99,7 @@ jobs:
               echo "a back-merge from main may reach a release branch"
               ;;
             *)
-              echo "::error::$HEAD_REF cannot reach a release branch; open this against main instead"
+              echo "::error::$HEAD_REF cannot reach the release branch; open this against main instead"
               exit 1
               ;;
           esac
