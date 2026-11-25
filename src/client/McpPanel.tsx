@@ -26,6 +26,9 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** The arguments typed for one tool: each tool of each server keeps its own draft. */
+const draftKey = (server: string | undefined, tool: string): string => `${server ?? ''}\u0000${tool}`
+
 /** One clickable row: a muted second line that may be clamped to two lines. */
 function RowButton({
   active,
@@ -64,6 +67,7 @@ export function McpPanel({ t }: PanelProps) {
   const [toolQuery, setToolQuery] = useState('')
   const [tool, setTool] = useState<ProbeTool>()
   const [argsText, setArgsText] = useState('')
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [result, setResult] = useState<CallResult>()
   const [request, setRequest] = useState<{ tool: string; arguments: Record<string, unknown> }>()
   const [resultKind, setResultKind] = useState<ResultKind>('json')
@@ -177,13 +181,32 @@ export function McpPanel({ t }: PanelProps) {
     clearPending(name)
   }
 
+  /** Keep the arguments of one tool, so picking it again shows what was typed rather than the prefill. */
+  const remember = (key: string, text: string): void => {
+    setDrafts((current) => (current[key] === text ? current : { ...current, [key]: text }))
+  }
+
   const pickTool = (next: ProbeTool): void => {
+    const key = draftKey(selected, next.name)
+    const draft = drafts[key] ?? JSON.stringify(prefillArguments(next.inputSchema), null, 2)
     setTool(next)
     setResult(undefined)
     setRequest(undefined)
     setCallError(undefined)
     setResultKind('json')
-    setArgsText(JSON.stringify(prefillArguments(next.inputSchema), null, 2))
+    setArgsText(draft)
+    remember(key, draft)
+  }
+
+  /** Put the arguments of the picked tool back to the example its schema describes. */
+  const reset = (): void => {
+    if (tool === undefined) return
+    const draft = JSON.stringify(prefillArguments(tool.inputSchema), null, 2)
+    setArgsText(draft)
+    remember(draftKey(selected, tool.name), draft)
+    setCallError(undefined)
+    setResult(undefined)
+    setRequest(undefined)
   }
 
   const send = async (): Promise<void> => {
@@ -395,15 +418,23 @@ export function McpPanel({ t }: PanelProps) {
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}
                     >
                       <span style={labelStyle}>{t('tryCall')}</span>
-                      <button type="button" className="mcpw-primary" onClick={() => void send()} disabled={sending}>
-                        {sending ? t('sending') : t('send')}
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button type="button" onClick={reset} disabled={sending}>
+                          {t('reset')}
+                        </button>
+                        <button type="button" className="mcpw-primary" onClick={() => void send()} disabled={sending}>
+                          {sending ? t('sending') : t('send')}
+                        </button>
+                      </div>
                     </div>
                     <textarea
                       aria-label={t('arguments')}
                       spellCheck={false}
                       value={argsText}
-                      onChange={(event) => setArgsText(event.target.value)}
+                      onChange={(event) => {
+                        setArgsText(event.target.value)
+                        if (tool !== undefined) remember(draftKey(selected, tool.name), event.target.value)
+                      }}
                       style={{ ...inputStyle, height: '18vh', minHeight: 96, flexShrink: 0 }}
                     />
                     {callError === undefined ? null : <div style={{ color: palette.danger }}>{callError}</div>}

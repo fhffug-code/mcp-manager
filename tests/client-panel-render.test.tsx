@@ -54,6 +54,7 @@ const listed = (server: ServerView): Answer => ({ status: 200, body: { ok: true,
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  localStorage.clear()
 })
 
 describe('the MCP page switch', () => {
@@ -158,6 +159,88 @@ describe('a server the page cannot change', () => {
     fireEvent.click(screen.getByText('clion'))
     const test = (await screen.findByRole('button', { name: 'testConnection' })) as HTMLButtonElement
     expect(test.disabled).toBe(false)
+  })
+})
+
+describe('the arguments of a tool', () => {
+  const schema = (name: string): unknown => ({
+    type: 'object',
+    properties: { [name]: { type: 'string' } },
+    required: [name],
+  })
+
+  const probed = (): Answer => ({
+    status: 200,
+    body: {
+      ok: true,
+      value: {
+        server: view(),
+        probe: {
+          ok: true,
+          toolCount: 2,
+          truncated: false,
+          durationMs: 5,
+          probedAt: '2026-11-25T00:00:00.000Z',
+          tools: [
+            { name: 'alpha', description: 'The first tool.', inputSchema: schema('message') },
+            { name: 'beta', description: 'The second tool.', inputSchema: schema('path') },
+          ],
+        },
+      },
+    },
+  })
+
+  /** Render the page and pick the server, so its tools are listed. */
+  async function openTools(): Promise<void> {
+    render(<McpPanel t={t} />)
+    fireEvent.click(await screen.findByText('clion'))
+    await screen.findByText('alpha')
+  }
+
+  /** The row of that tool in the list, not the heading the detail band shows once it is picked. */
+  const toolRow = (name: string): HTMLElement => within(screen.getByTestId('split-tools')).getByText(name)
+
+  it('keeps what was typed when another tool is picked in between', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    const box = screen.getByLabelText('arguments') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '{"message":"edited"}' } })
+
+    fireEvent.click(toolRow('beta'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toContain('"path"')
+
+    fireEvent.click(toolRow('alpha'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe('{"message":"edited"}')
+  })
+
+  it('keeps what was typed when the same tool is picked again', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '{"message":"kept"}' } })
+    fireEvent.click(toolRow('alpha'))
+
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe('{"message":"kept"}')
+  })
+
+  it('puts the example back when it is reset, and remembers that too', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    const prefilled = (screen.getByLabelText('arguments') as HTMLTextAreaElement).value
+    expect(prefilled).toContain('"message"')
+
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '{"message":"changed"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'reset' }))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
+
+    fireEvent.click(toolRow('beta'))
+    fireEvent.click(toolRow('alpha'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
   })
 })
 
