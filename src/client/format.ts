@@ -1,5 +1,13 @@
 /** Small pure helpers the page uses; kept apart so they can be tested without a DOM. */
-import type { CallContent, ProbeResult, ProbeSummary, ServerField, ServerPatch, ServerView } from '../types/index.js'
+import type {
+  CallContent,
+  ProbeResult,
+  ProbeSummary,
+  ServerField,
+  ServerPatch,
+  ServerView,
+  TransportKind,
+} from '../types/index.js'
 
 export interface Row {
   key: string
@@ -70,15 +78,24 @@ function changedFields(rows: readonly Row[]): Record<string, string | null> | un
   return Object.keys(change).length === 0 ? undefined : change
 }
 
-/** Turn the form into the patch the Host applies. */
-export function patchOf(view: ServerView, draft: Draft): ServerPatch {
-  const patch: ServerPatch = { transport: view.transport }
-  if (view.transport === 'stdio') {
+/**
+ * Turn the form into the patch the Host applies, for the transport the form shows now.
+ *
+ * Only the shown transport's fields are sent; the Host drops the other side's fields when it applies
+ * the switch, so a record can never carry a mix of the two.
+ */
+export function patchOf(draft: Draft, transport: TransportKind): ServerPatch {
+  const patch: ServerPatch = { transport }
+  if (transport === 'stdio') {
     patch.command = blankToNull(draft.command)
     patch.args = draft.args.trim() === '' ? null : draft.args.trim().split(/\s+/)
     patch.cwd = blankToNull(draft.cwd)
+    const env = changedFields(draft.env)
+    if (env !== undefined) patch.env = env
   } else {
     patch.url = blankToNull(draft.url)
+    const headers = changedFields(draft.headers)
+    if (headers !== undefined) patch.headers = headers
   }
   const toolCallTimeoutMs = milliseconds(draft.toolCallTimeoutMs)
   if (toolCallTimeoutMs !== undefined) patch.toolCallTimeoutMs = toolCallTimeoutMs
@@ -86,10 +103,6 @@ export function patchOf(view: ServerView, draft: Draft): ServerPatch {
   if (startupTimeoutMs !== undefined) patch.startupTimeoutMs = startupTimeoutMs
   const closeTimeoutMs = milliseconds(draft.closeTimeoutMs)
   if (closeTimeoutMs !== undefined) patch.closeTimeoutMs = closeTimeoutMs
-  const env = changedFields(draft.env)
-  if (env !== undefined) patch.env = env
-  const headers = changedFields(draft.headers)
-  if (headers !== undefined) patch.headers = headers
   return patch
 }
 
