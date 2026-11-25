@@ -187,7 +187,7 @@ npm run typecheck     # host and client
 npm run lint
 npm run format:check
 npm test              # vitest, includes a real stdio MCP fixture server
-npm run build         # tsc + the client bundle
+npm run build         # clean, then tsc + the client bundle
 npm run verify:bundle # checks the manifest, the patch and both artifacts
 npm run pack          # dist/dsh-mcp-workbench-<version>.zip, ready to upload
 ```

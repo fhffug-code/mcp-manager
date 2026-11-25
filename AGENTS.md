@@ -60,18 +60,21 @@ node node_modules/typescript/bin/tsc -p tsconfig.test.json       # tests
 node node_modules/eslint/bin/eslint.js "src/**/*.{ts,tsx}" "tests/**/*.{ts,tsx}" "scripts/**/*.mjs"
 node node_modules/prettier/bin/prettier.cjs --check .
 node node_modules/vitest/vitest.mjs run --coverage
-node node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/build-client.mjs
+node scripts/clean.mjs && node node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/build-client.mjs
 node scripts/verify-bundle.mjs
 node scripts/check-commits.mjs <base-sha> [head-sha]           # Conventional Commits
 ```
 
 `npm.cmd run typecheck`, `lint`, `format:check`, `test`, `build` and `verify:bundle` are the same
 things packaged up; prefer them when you only need the aggregate answer. Coverage must stay at or
-above 70% of lines.
+above 70% of lines. `npm run build` clears `lib/` and `dist/` first (`npm run clean`), so a build holds
+only what the current sources emit; `npm run pack` refuses to run until `lib/` has been built.
 
 **中文。** 在仓库根目录按顺序执行，提交前把报告的问题修掉；CI 在 Node 22 上跑同一套命令。
 `npm.cmd run typecheck｜lint｜format:check｜test｜build｜verify:bundle` 是它们的打包版，只想要结论时用
 这些即可。行覆盖率不得低于 70%。`node scripts/check-commits.mjs <base> [head]` 校验提交信息。
+`npm run build` 会先清空 `lib/` 与 `dist/`（即 `npm run clean`），所以构建产物里只有当前源码产出的东西；
+`npm run pack` 在 `lib/` 尚未构建时会直接报错退出。
 
 ## 4. Install and reload the bundle / 安装与重载
 
