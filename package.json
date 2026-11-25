@@ -44,9 +44,10 @@
     }
   },
   "scripts": {
-    "build": "npm run build:host && npm run build:client",
+    "build": "npm run clean && npm run build:host && npm run build:client",
     "build:host": "tsc -p tsconfig.json",
     "build:client": "node scripts/build-client.mjs",
+    "clean": "node scripts/clean.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json && tsc -p tsconfig.test.json",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"scripts/**/*.mjs\"",
     "format": "prettier --write .",

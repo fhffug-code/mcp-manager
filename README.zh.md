@@ -146,7 +146,7 @@ npm run typecheck     # host 与 client
 npm run lint
 npm run format:check
 npm test              # vitest，含一个真实的 stdio MCP 夹具服务器
-npm run build         # tsc + 客户端 bundle
+npm run build         # 先清理，再 tsc + 客户端 bundle
 npm run verify:bundle # 校验 manifest、补丁与两个产物
 npm run pack          # 生成 dist/dsh-mcp-workbench-<版本>.zip，可直接上传
 ```
