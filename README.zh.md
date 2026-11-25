@@ -148,6 +148,7 @@ npm run format:check
 npm test              # vitest，含一个真实的 stdio MCP 夹具服务器
 npm run build         # tsc + 客户端 bundle
 npm run verify:bundle # 校验 manifest、补丁与两个产物
+npm run pack          # 生成 dist/dsh-mcp-workbench-<版本>.zip，可直接上传
 ```
 
 目录结构：
@@ -164,7 +165,9 @@ npm run verify:bundle # 校验 manifest、补丁与两个产物
 - `src/client/` —— 侧栏面板：页面、工具编辑器、schema 预填与两种结果视图。
 - `tests/` —— 测试套件，含 `tests/fixtures/stdio-server.mjs`。
 
-`main` 是开发主线，`release/<minor>` 分支冻结一个版本：见 [docs/GITFLOW.md](docs/GITFLOW.md)。改动记录在 [CHANGELOG.md](CHANGELOG.md)。
+`main` 是开发主线，`release` 是发布线：改动经 PR 落到 `main`，版本在 `release` 上准备，在那边
+`git push origin v<版本>` 就会让 **Release** workflow 打包并发布。见 [docs/GITFLOW.md](docs/GITFLOW.md)。
+改动记录在 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可
 

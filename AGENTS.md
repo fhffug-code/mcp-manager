@@ -94,57 +94,63 @@ above 70% of lines.
 
 ## 5. Branches, pull requests, commits / 分支、PR、提交
 
-**English.** Two kinds of branch: `main` (the development line) and `release/<minor>` (a version being
-stabilised). Work happens on `<type>/<slug>` cut from `main`, with the type taken from the Conventional
+**English.** Two long-lived branches: `main` (the development line) and `release` (the published
+line). Work happens on `<type>/<slug>` cut from `main`, with the type taken from the Conventional
 Commit it carries: `feature/`, `fix/`, `chore/`, `docs/`, `test/`, `ci/`, `refactor/`, `perf/`.
-Every change lands by pull request against `main`, merged with a **merge commit** — never squash, never
-rebase — so the branch keeps its own shape. Never push straight to `main` or a `release/*` branch. The
-required status contexts are `Check` and `Commit messages`; `Check` gates on `Verify on Node 22`, the
-branch-source guard and the commit-message check. Commit messages are Conventional Commits, lower case,
-imperative, at most 100 characters, one thing per commit. Details: [docs/GITFLOW.md](docs/GITFLOW.md).
+Every change lands by pull request, merged with a **merge commit** — never squash, never rebase — so the
+branch keeps its own shape. Never push straight to `main` or `release`: both require a pull request,
+the two status contexts, and refuse force pushes and deletions. The required status contexts are
+`Check` and `Commit messages`; `Check` gates on `Verify on Node 22`, the branch-source guard and the
+commit-message check. Commit messages are Conventional Commits, lower case, imperative, at most 100
+characters, one thing per commit. Details: [docs/GITFLOW.md](docs/GITFLOW.md).
 
-**中文。** 只有两类分支：`main`（开发主线）和 `release/<minor>`（正在冻结的版本）。日常从 `main` 切
+**中文。** 只有两条长期分支：`main`（开发主线）和 `release`（发布线）。日常从 `main` 切
 `<type>/<slug>`，类型就用对应提交的前缀：`feature/`、`fix/`、`chore/`、`docs/`、`test/`、`ci/`、
-`refactor/`、`perf/`。所有改动都走面向 `main` 的 PR，并且用 **merge commit** 合并，禁止 squash、
-禁止 rebase，保留分支自己的形状。永远不要直接 push 到 `main` 或 `release/*`。必需检查是 `Check` 与
-`Commit messages`，其中 `Check` 汇总 `Verify on Node 22`、来源分支检查和提交信息检查。提交信息用
-Conventional Commits，小写、祈使句、不超过 100 字符、一个提交只做一件事。细则见
-[docs/GITFLOW.md](docs/GITFLOW.md)。
+`refactor/`、`perf/`。所有改动都走 PR，并且用 **merge commit** 合并，禁止 squash、禁止 rebase，保留
+分支自己的形状。永远不要直接 push 到 `main` 或 `release`：两者都要求 PR、两个必需检查，并拒绝强推与
+删除。必需检查是 `Check` 与 `Commit messages`，其中 `Check` 汇总 `Verify on Node 22`、来源分支检查和
+提交信息检查。提交信息用 Conventional Commits，小写、祈使句、不超过 100 字符、一个提交只做一件事。
+细则见 [docs/GITFLOW.md](docs/GITFLOW.md)。
 
 ## 6. Release checklist / 发版清单
 
 **English.**
 
-1. `git switch main && git pull`, then `git switch -c release/<minor>`.
+1. `git switch release && git pull`, then `git switch -c chore/release-<version>`.
 2. Bump the version: `npm version minor --no-git-tag-version` (or `major`); a `patch` release goes
    through the hotfix flow instead.
 3. Move the `[Unreleased]` entries of `CHANGELOG.md` under `## [<version>] - <yyyy-mm-dd>`.
-4. `git commit -am "chore(release): <version>"`, push the branch, let CI go green.
-5. Collect freeze fixes on `fix/*` branches, each with a pull request into the release branch.
-6. `git tag -a v<version> -m "v<version>"` on the release branch, then `git push origin v<version>`.
-7. Open `release/<minor>` against `main`, merge with **Create a merge commit**.
-8. Keep the release branch: a later patch release is a `hotfix/*` merged into `main` and into it.
+4. `git commit -am "chore(release): <version>"`, push the branch, open it against `release`, and let CI
+   go green; merge with a merge commit.
+5. Collect freeze fixes on `fix/*` branches, each with a pull request into `release`.
+6. `git tag -a v<version> -m "v<version>"` on `release`, then `git push origin v<version>`. The **Release**
+   workflow builds the zip, writes the notes from the changelog and publishes the GitHub release; rerun
+   it by hand (`workflow_dispatch`, the tag as input) to top a release up.
+7. Open `release` against `main`, merge with **Create a merge commit**, so the two lines stay level.
+8. Keep `release`: a later patch release repeats steps 2–7.
 
 **中文。**
 
-1. `git switch main && git pull`，再 `git switch -c release/<minor>`。
+1. `git switch release && git pull`，再 `git switch -c chore/release-<版本>`。
 2. 改版本号：`npm version minor --no-git-tag-version`（或 `major`）；只改 patch 的版本走 hotfix 流程。
 3. 把 `CHANGELOG.md` 里 `[Unreleased]` 的内容移到 `## [<版本>] - <yyyy-mm-dd>`。
-4. `git commit -am "chore(release): <版本>"`，推分支，等 CI 全绿。
-5. 冻结期的修复走 `fix/*` 分支，各自向 release 分支开 PR。
-6. 在 release 分支上 `git tag -a v<版本> -m "v<版本>"`，再 `git push origin v<版本>`。
-7. `release/<minor>` 对 `main` 开 PR，用 **Create a merge commit** 合并。
-8. release 分支保留；之后的补丁版是 `hotfix/*`，同时并进 `main` 和它。
+4. `git commit -am "chore(release): <版本>"`，推分支、对 `release` 开 PR，等 CI 全绿后用 merge commit 合入。
+5. 冻结期的修复走 `fix/*` 分支，各自向 `release` 开 PR。
+6. 在 `release` 上 `git tag -a v<版本> -m "v<版本>"`，再 `git push origin v<版本>`。**Release** workflow
+   会自动 build、打包、按 changelog 生成说明并发布 GitHub release；要补发就手动跑一次
+   （`workflow_dispatch`，输入标签）。
+7. `release` 对 `main` 开 PR，用 **Create a merge commit** 合并，让两条线保持一致。
+8. `release` 保留；之后的补丁版重复第 2–7 步。
 
 ## 7. Hotfix checklist / 热修清单
 
 **English.** `git switch main && git switch -c hotfix/<slug>`; fix, verify, commit; PR into `main`
-with a merge commit; tag `v<version>` on `main`; then PR the same branch into the affected
-`release/<minor>` so the release line carries the fix too.
+with a merge commit; then PR the same branch into `release` so the published line carries the fix too,
+and tag `v<version>` where the fix ships.
 
 **中文。** `git switch main && git switch -c hotfix/<slug>`；修复、验证、提交；对 `main` 开 PR 并 merge
-commit 合入；在 `main` 上打 `v<版本>` 标签；再把同一分支对受影响的 `release/<minor>` 开 PR 合入，让
-release 线也带上这个修复。
+commit 合入；再把同一分支对 `release` 开 PR 合入，让发布线也带上这个修复，并在实际发布的那条线上打
+`v<版本>` 标签。
 
 ## 8. Code rules / 代码规则
 

@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- A **Release** workflow that runs when a `v*` tag is pushed — and on demand, with the tag as its input — and publishes the GitHub release itself: it builds the bundle, packs `dist/dsh-mcp-workbench-<version>.zip`, writes the notes from the matching `CHANGELOG` section and attaches the zip to the release.
+- `npm run pack`, a portable `scripts/pack-release.mjs` that stages the files a profile needs and zips them on either Windows or the Linux runners, printing the file count, the size and the `sha256` of the archive.
+- `scripts/release-notes.mjs`, which turns the changelog entry of one version into the body of its release.
+
+### Changed
+
+- The repository now has two long-lived branches, `main` and `release`, instead of cutting a `release/<minor>` branch per version. A release is prepared on `release` by a pull request, tagged there, and merged back into `main`; both branches require a pull request, the two status contexts, and refuse force pushes and deletions.
+- The branch-source check follows the same model: `main` takes the contribution branches and the `release` line, and `release` takes fixes, chores and a back-merge from `main`.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added
