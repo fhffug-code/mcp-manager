@@ -1,11 +1,10 @@
 # Branching
 
-This repository uses two kinds of branch, in the shape large C++ projects such as CMake use:
+This repository uses two long-lived branches, in the shape projects such as CMake use:
 
 - **`main`** holds the development line. Everything that ships passes through it.
-- **`release/<minor>`** holds a line that is being stabilised, for example `release/0.1`. It is cut
-  from `main`, receives fixes only, and stays in the repository so a later patch release can be cut
-  from it.
+- **`release`** holds the line that is published. A release is prepared on it, tagged there, and
+  merged back into `main` so the two stay level.
 
 There is no `develop`: `main` is where work lands, and CI on `main` has to be green.
 
@@ -13,15 +12,16 @@ There is no `develop`: `main` is where work lands, and CI on `main` has to be gr
 
 Cut from `main`, named `<type>/<slug>` where the type is one of the Conventional Commit types:
 
-| Branch                                         | Cut from          | Opens a pull request against | Purpose                                                     |
-| ---------------------------------------------- | ----------------- | ---------------------------- | ----------------------------------------------------------- |
-| `feature/*`                                    | `main`            | `main`                       | A user-visible capability or a refactor                     |
-| `fix/*`, `chore/*`, `docs/*`, `test/*`, `ci/*` | `main`            | `main`                       | A small correction of one kind                              |
-| `refactor/*`, `perf/*`                         | `main`            | `main`                       | Behaviour-preserving or speed work                          |
-| `hotfix/*`                                     | `main`            | `main`                       | An urgent repair, also merged into the affected `release/*` |
-| `fix/*`, `chore/*`, `docs/*`, `test/*`, `ci/*` | `release/<minor>` | the same `release/<minor>`   | A fix that must reach the next patch release                |
+| Branch                                         | Cut from  | Opens a pull request against | Purpose                                                        |
+| ---------------------------------------------- | --------- | ---------------------------- | -------------------------------------------------------------- |
+| `feature/*`                                    | `main`    | `main`                       | A user-visible capability or a refactor                        |
+| `fix/*`, `chore/*`, `docs/*`, `test/*`, `ci/*` | `main`    | `main`                       | A small correction of one kind                                 |
+| `refactor/*`, `perf/*`                         | `main`    | `main`                       | Behaviour-preserving or speed work                             |
+| `hotfix/*`                                     | `main`    | `main`                       | An urgent repair, also merged into `release`                   |
+| `fix/*`, `chore/*`, `docs/*`, `test/*`, `ci/*` | `release` | `release`                    | A fix or the version bump that must reach the next release     |
+| `refactor/*`, `perf/*`, `hotfix/*`             | `release` | `release`                    | The same, when the change is larger than a one-line correction |
 
-Names are short and kebab-cased: `feature/probe-cache`, `fix/route-403`, `release/0.2`.
+Names are short and kebab-cased: `feature/probe-cache`, `fix/route-403`, `chore/release-0.2.0`.
 
 ## Merge rules
 
@@ -33,9 +33,12 @@ Names are short and kebab-cased: `feature/probe-cache`, `fix/route-403`, `releas
   git merge --no-ff feature/probe-cache -m "Merge branch 'feature/probe-cache'"
   ```
 
-- Never push straight to `main` or to a `release/*` branch. The repository rules require a pull
-  request and two green status checks, and the `Check where the pull request comes from` job refuses
-  a branch whose name does not fit the table above.
+- Never push straight to `main` or to `release`. Both are protected the same way: a pull request is
+  required, the `Check` and `Commit messages` status contexts have to be green, and force pushes and
+  deletions are refused. The `Check where the pull request comes from` job refuses a head branch whose
+  name does not fit the table above.
+- `release` takes fixes, the version bump, and back-merges from `main`; a feature reaches `release`
+  only by way of `main`.
 
 ## Commits
 
@@ -56,31 +59,43 @@ needed, and one commit does one thing. The `Commit messages` job checks this on 
 
 ## Release
 
-A release is cut from `main` on a `release/<minor>` branch, and the version only exists once the
-release branch is merged back:
+`release` is the published line; a version exists once the release branch carries its tag.
 
 ```sh
-git switch main
-git switch -c release/0.2
+git switch release
+git pull
+git switch -c chore/release-0.2.0
 npm version minor --no-git-tag-version   # or major; patch goes through the hotfix flow
 # move the CHANGELOG entries from Unreleased to 0.2.0
 git commit -am "chore(release): 0.2.0"
-git push -u origin release/0.2
+git push -u origin chore/release-0.2.0
 ```
 
 Then:
 
-1. Fixes found during the freeze land on `fix/*` branches and are pulled into `release/0.2` by pull
-   request, so CI proves the release branch is green.
-2. Tag the release branch once it is final:
+1. Open `chore/release-0.2.0` against `release` and merge it with **Create a merge commit**, so CI
+   proves the release line is green with the new version.
+2. Tag it once it is final:
    `git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0`.
-3. Open `release/0.2` against `main` and merge it with **Create a merge commit**. The tag is already
-   an ancestor of `main` at that point.
-4. Leave `release/0.2` in place. A patch release is a `hotfix/*` branch merged into `main` and into
-   `release/0.2`, tagged `v0.2.1`.
+3. Pushing the tag runs the **Release** workflow: it builds the bundle, packs
+   `dist/dsh-mcp-workbench-<version>.zip`, writes the notes from the matching `CHANGELOG` section, and
+   publishes the GitHub release with that zip attached. Re-running the workflow by hand
+   (`workflow_dispatch`, with the tag as its input) republishes or tops the release up.
+4. Open `release` against `main` and merge it with **Create a merge commit**. The tag is already an
+   ancestor of `main` at that point.
+5. Fixes found during a freeze land on `fix/*` branches and reach `release` by pull request. A patch
+   release repeats steps 2–4 with `v0.2.1`.
 
-A release pull request is the only kind that reaches `main` with a version bump: nothing else touches
-`package.json`'s version or moves the `CHANGELOG` entries out of `Unreleased`.
+A release is the only change that bumps `package.json`'s version or moves the `CHANGELOG` entries out
+of `Unreleased`.
+
+The same thing by hand, when the workflow cannot run:
+
+```sh
+npm run build
+npm run pack                      # dist/dsh-mcp-workbench-<version>.zip, with its sha256 on stdout
+node scripts/release-notes.mjs 0.2.0 --asset dsh-mcp-workbench-0.2.0.zip --sha256 <hash> --out dist/release-notes.md
+```
 
 ## Hotfix
 
@@ -92,9 +107,8 @@ git push -u origin hotfix/route-403
 ```
 
 1. Open `hotfix/route-403` against `main`, merge with a merge commit.
-2. Tag `v0.2.1` on `main`.
-3. Open the same branch against the affected `release/0.2` and merge it there too, so the release line
-   carries the fix.
+2. Tag `v0.2.1` on `main` — or, when the fix also ships the release line, on `release` after step 3.
+3. Open the same branch against `release` and merge it there too, so the published line carries the fix.
 
 ## Forks and outside contributions
 

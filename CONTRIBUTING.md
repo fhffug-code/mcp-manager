@@ -47,6 +47,6 @@ CI runs exactly these on Node 22, plus the coverage run. Keep the branch green b
 ## Branches and commits
 
 Cut a branch from `main`, named `<type>/<slug>` after the Conventional Commit type it carries
-(`feature/`, `fix/`, `chore/`, `docs/`, `test/`, `ci/`, `refactor/`, `perf/`); a release is cut on a
-`release/<minor>` branch. Everything lands through a pull request against `main` with a merge commit —
-never a squash, never a rebase. Details, including the fork workflow, in [docs/GITFLOW.md](docs/GITFLOW.md).
+(`feature/`, `fix/`, `chore/`, `docs/`, `test/`, `ci/`, `refactor/`, `perf/`); a release is prepared on
+the long-lived `release` branch. Everything lands through a pull request with a merge commit — never a
+squash, never a rebase. Details, including the fork workflow, in [docs/GITFLOW.md](docs/GITFLOW.md).
