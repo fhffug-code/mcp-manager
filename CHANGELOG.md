@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-25
+
 ### Added
 
 - An **MCP** entry in the sidebar, after **Plugins** and the plugin marketplace, opening an **MCP management** page that lists the three sources of servers: the static `@deepseek-ai/dsh-mcp-client` rows of the profile (read-only), the servers of the profile's `@deepseek-ai/dsh-mcp-manager` row (editable), and the servers other plugins registered on `mcpManager` (read-only).
@@ -45,4 +47,5 @@ All notable changes to this project are documented here. The format follows [Kee
 - The probe summary of a tool list asked for two words the dictionaries did not have, and nothing showed how many tools were returned once the list was cut short. Both are words now, and the summary says when the list was truncated.
 - A test call whose argument box did not hold a JSON object printed an English sentence in every language. The page now asks for one in its own words, and the parser reports why it refused instead of returning a sentence.
 
-[Unreleased]: https://github.com/fhffug/mcp-manager/commits/main
+[Unreleased]: https://github.com/fhffug/mcp-manager/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/fhffug/mcp-manager/releases/tag/v0.1.0
