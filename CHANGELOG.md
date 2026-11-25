@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - The branch-source check follows the same model: `main` takes the contribution branches and the `release` line, and `release` takes fixes, chores and a back-merge from `main`.
 - `npm run build` clears `lib/` and `dist/` first, through the new `npm run clean`, so a build holds only what the current sources emit and a local `npm run pack` no longer ships leftovers from an older one. `npm run pack` stops with a clear message when `lib/` has not been built.
 - GitHub Actions moved to `actions/checkout@v5` and `actions/setup-node@v5`, which run on the Node 24 runner without the deprecation warning the version 4 actions printed.
+- A change now lands as one pull request carrying several commits, and `release` is brought up to date once per version instead of after every merge, so the published line keeps one merge commit per change rather than a chain of follow-up pull requests.
 
 ### Fixed
 

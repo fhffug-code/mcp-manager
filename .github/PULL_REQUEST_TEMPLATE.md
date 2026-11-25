@@ -11,7 +11,8 @@
 
 ## Checklist
 
-- [ ] The branch is a `<type>/<slug>` cut from `main` (or a `release/<minor>` for a freeze fix)
+- [ ] The branch is a `<type>/<slug>` cut from `main` (or `release`, for a freeze fix)
+- [ ] This pull request carries the whole change: several commits are fine, a second pull request for a follow-up is not
 - [ ] The commits are Conventional Commits, one thing each
 - [ ] `CHANGELOG.md` has a line if a person can notice the change
 - [ ] The docs that describe the touched surface still match the code

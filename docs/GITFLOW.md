@@ -40,6 +40,20 @@ Names are short and kebab-cased: `feature/probe-cache`, `fix/route-403`, `chore/
 - `release` takes fixes, the version bump, and back-merges from `main`; a feature reaches `release`
   only by way of `main`.
 
+## One pull request per change
+
+A change reaches `main` as **one pull request** — not one per commit, and not one per small correction:
+
+- Open a `<type>/<slug>` branch once, keep committing while the change is being finished, and open the
+  pull request when it is green. A batch of related fixes is one branch with several commits, one
+  review and one merge commit.
+- Feedback goes to that same branch: `git push` updates the pull request that is already open. Do not
+  open a second pull request for "the fix to the first one".
+- Work that belongs to another theme waits until this pull request is merged, and then gets its own
+  branch. Do not stack pull requests on top of each other.
+- `release` catches up with `main` **when a version is prepared**, not after every merge — see
+  [Release](#release). A version needs exactly one `main` → `release` pull request.
+
 ## Commits
 
 Messages follow Conventional Commits, with a scope where it helps:
@@ -60,6 +74,12 @@ needed, and one commit does one thing. The `Commit messages` job checks this on 
 ## Release
 
 `release` is the published line; a version exists once the release branch carries its tag.
+
+A version starts by bringing the published line up to date with `main` through **one** pull request,
+titled `chore: bring the release line up to date` and merged with a merge commit. That is the only
+`main` → `release` pull request a version needs: day-to-day merges into `main` do not each get one.
+
+Then:
 
 ```sh
 git switch release

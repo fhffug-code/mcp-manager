@@ -105,7 +105,12 @@ branch keeps its own shape. Never push straight to `main` or `release`: both req
 the two status contexts, and refuse force pushes and deletions. The required status contexts are
 `Check` and `Commit messages`; `Check` gates on `Verify on Node 22`, the branch-source guard and the
 commit-message check. Commit messages are Conventional Commits, lower case, imperative, at most 100
-characters, one thing per commit. Details: [docs/GITFLOW.md](docs/GITFLOW.md).
+characters, one thing per commit.
+
+**One pull request per change.** A batch of related work is one `<type>/<slug>` branch with several
+commits, one review and one merge commit — not one pull request per correction. Feedback goes to that
+same branch, and work of another theme waits for the merge. `release` is synced from `main` **once per
+version**, not after every merge. Details: [docs/GITFLOW.md](docs/GITFLOW.md).
 
 **中文。** 只有两条长期分支：`main`（开发主线）和 `release`（发布线）。日常从 `main` 切
 `<type>/<slug>`，类型就用对应提交的前缀：`feature/`、`fix/`、`chore/`、`docs/`、`test/`、`ci/`、
@@ -113,7 +118,11 @@ characters, one thing per commit. Details: [docs/GITFLOW.md](docs/GITFLOW.md).
 分支自己的形状。永远不要直接 push 到 `main` 或 `release`：两者都要求 PR、两个必需检查，并拒绝强推与
 删除。必需检查是 `Check` 与 `Commit messages`，其中 `Check` 汇总 `Verify on Node 22`、来源分支检查和
 提交信息检查。提交信息用 Conventional Commits，小写、祈使句、不超过 100 字符、一个提交只做一件事。
-细则见 [docs/GITFLOW.md](docs/GITFLOW.md)。
+
+**一个改动一个 PR。** 一批相关工作就是一个 `<type>/<slug>` 分支、多个提交、一次评审、一个 merge
+commit，而不是每修一处就开一个 PR。评审意见追加到同一分支，另一个主题的活等这次合并之后再开。
+`release` 每个版本只从 `main` 同步**一次**，不是每次合并都同步。细则见
+[docs/GITFLOW.md](docs/GITFLOW.md)。
 
 ## 6. Release checklist / 发版清单
 
