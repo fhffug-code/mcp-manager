@@ -485,18 +485,20 @@ export function McpPanel({ t }: PanelProps) {
                   <div style={labelStyle}>{t('pickTool')}</div>
                 ) : (
                   <>
-                    <div
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}
-                    >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <span style={labelStyle}>{t('tryCall')}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button type="button" onClick={reset} disabled={sending}>
-                          {t('reset')}
-                        </button>
-                        <button type="button" className="mcpw-primary" onClick={() => void send()} disabled={sending}>
-                          {sending ? t('sending') : t('send')}
-                        </button>
-                      </div>
+                      <button type="button" onClick={reset} disabled={sending}>
+                        {t('reset')}
+                      </button>
+                      <button
+                        type="button"
+                        className="mcpw-primary"
+                        style={{ minWidth: 84, marginLeft: 'auto', paddingInline: 18 }}
+                        onClick={() => void send()}
+                        disabled={sending}
+                      >
+                        {sending ? t('sending') : t('send')}
+                      </button>
                     </div>
                     <textarea
                       aria-label={t('arguments')}
