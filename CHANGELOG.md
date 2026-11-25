@@ -18,9 +18,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - Read-only rows that still probe and still take test calls, with the reason they cannot be edited shown on the row.
 - Probing a server over its own MCP session: tool names, descriptions, input schemas, timings, a name and schema budget, and a staged failure report. The session is opened on first use, reused by later probes and test calls, and closed when the server is written, restarted, or the plugin stops.
 - A `mcp_workbench` tool with `list`, `detail`, `probe`, `call`, `save`, `add`, `remove`, `setEnabled` and `restart`; every change needs `confirm: true`.
-- An English and a Chinese locale for the page and the bundle metadata.
+- Every word of the page in the eight languages the Harness offers — Chinese, English, Japanese, Spanish, French, German, Russian and Portuguese — following **Settings → General → Language** and switching as soon as another one is picked. The dictionaries are typed against the English one, so a forgotten key fails `npm run typecheck`, and `locale/<id>.json` carries the bundle metadata for the same eight.
+- A Chinese manual, [README.zh.md](README.zh.md), beside the English [README.md](README.md), each linking to the other.
 - `POST /api/mcp-workbench`, a same-origin JSON endpoint, as the only channel between the page and the Host.
-- A vitest suite of 192 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, a unit suite over the connection pool, and a jsdom test of the page's switch and its bands.
+- A vitest suite of 210 tests, including a dependency-free stdio MCP fixture server that the probe and the call path exercise for real, a unit suite over the connection pool, and a jsdom test of the page's switch and its bands.
 - GitHub Actions: the verification pipeline, a check that a pull request comes from a branch of the right kind, and a Conventional Commit check.
 
 ### Changed
@@ -41,5 +42,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Test connection and test calls opened a new MCP session, and a new process, on every request: a streamable HTTP server saw one session per click. One session per server is now kept and reused, and a call whose session died is reported instead of being replayed.
 - The test suite is type-checked: `tsconfig.test.json` covers `src/` and `tests/`, `npm run typecheck` runs it, and the type errors the IDE was reporting (a mock logger, a textually typed status table, an untyped mock tuple) are fixed.
 - The argument list of a `stdio` server lost its quoting when the form read and wrote it, so a path with a space came back as several arguments. A quoted argument now survives the round trip, and a list that was already split that way is joined again.
+- The probe summary of a tool list asked for two words the dictionaries did not have, and nothing showed how many tools were returned once the list was cut short. Both are words now, and the summary says when the list was truncated.
+- A test call whose argument box did not hold a JSON object printed an English sentence in every language. The page now asks for one in its own words, and the parser reports why it refused instead of returning a sentence.
 
 [Unreleased]: https://github.com/fhffug/mcp-manager/commits/main
