@@ -1,0 +1,353 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { McpPanel } from '../src/client/McpPanel.js'
+import { DEFAULT_LAYOUT, LAYOUT_KEY } from '../src/client/layout.js'
+import { STYLES } from '../src/client/styles.js'
+import type { ServerView } from '../src/types/index.js'
+
+const t = (key: string): string => key
+
+const view = (over: Partial<ServerView> = {}): ServerView => ({
+  name: 'clion',
+  source: 'managed',
+  transport: 'streamable-http',
+  endpoint: 'http://127.0.0.1:64362/stream',
+  url: 'http://127.0.0.1:64362/stream',
+  enabled: true,
+  editable: true,
+  entryId: 'mcp-manager',
+  env: {},
+  headers: {},
+  timeouts: {},
+  ...over,
+})
+
+interface Call {
+  action: string
+  name?: string
+  enabled?: boolean
+  patch?: Record<string, unknown>
+}
+
+interface Answer {
+  status: number
+  body: unknown
+}
+
+/** A fetch double that records the action of every request and answers from one callback. */
+function stubFetch(answer: (call: Call) => Answer): Call[] {
+  const calls: Call[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_path: string, init?: { body?: string }) => {
+      const call = JSON.parse(String(init?.body ?? '{}')) as Call
+      calls.push(call)
+      const result = answer(call)
+      return { status: result.status, json: async () => result.body } as unknown as Response
+    }),
+  )
+  return calls
+}
+
+const listed = (server: ServerView): Answer => ({ status: 200, body: { ok: true, value: { servers: [server] } } })
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  localStorage.clear()
+})
+
+describe('the MCP page switch', () => {
+  it('shows the new state as soon as it is switched, before the profile answers', async () => {
+    const calls = stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      if (call.action === 'setEnabled')
+        return { status: 200, body: { ok: true, value: view({ enabled: call.enabled }) } }
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+
+    fireEvent.click(screen.getByRole('switch'))
+
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+    await waitFor(() => expect(calls.some((call) => call.action === 'setEnabled')).toBe(true))
+    expect(calls.find((call) => call.action === 'setEnabled')).toMatchObject({ name: 'clion', enabled: false })
+  })
+
+  it('keeps the switched state once the list agrees', async () => {
+    let switched = false
+    const calls = stubFetch((call) => {
+      if (call.action === 'list') return listed(view({ enabled: !switched }))
+      if (call.action === 'setEnabled') {
+        switched = call.enabled === true
+        return { status: 200, body: { ok: true, value: view({ enabled: switched }) } }
+      }
+      return { status: 200, body: { ok: true, value: { server: view({ enabled: switched }) } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    fireEvent.click(screen.getByRole('switch'))
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+
+    await waitFor(() => expect(calls.filter((call) => call.action === 'list').length).toBeGreaterThan(1), {
+      timeout: 5_000,
+    })
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+    await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-busy')).toBe('false'), {
+      timeout: 5_000,
+    })
+  })
+
+  it('says why a switch failed and puts the row back', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return {
+        status: 405,
+        body: { ok: false, error: { code: 'unsupported', message: 'the plugin manager service is not available' } },
+      }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    fireEvent.click(screen.getByRole('switch'))
+
+    await waitFor(() => expect(screen.getByText('the plugin manager service is not available')).toBeTruthy())
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+  })
+})
+
+describe('the MCP page layout', () => {
+  it('nests the bands the page is built from', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    for (const id of ['split-servers', 'bar-tools', 'split-tools', 'cell-description', 'cell-call']) {
+      expect(screen.getByTestId(id)).toBeTruthy()
+    }
+  })
+
+  it('separates the bands with a hairline and a handle on each split', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    expect(STYLES).toContain('.mcpw-divide-right { border-right: 1px solid')
+    const separators = screen.getAllByRole('separator')
+    expect(separators.map((node) => node.getAttribute('aria-orientation'))).toEqual([
+      'vertical',
+      'vertical',
+      'horizontal',
+    ])
+    for (const id of ['sep-servers', 'sep-tools', 'sep-detail']) expect(screen.getByTestId(id)).toBeTruthy()
+  })
+
+  it('starts at 2/8 and remembers a share it was dragged to', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    expect(DEFAULT_LAYOUT).toEqual({ servers: 0.2, tools: 0.3, detail: 0.3 })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    fireEvent.keyDown(screen.getByTestId('sep-servers'), { key: 'ArrowRight' })
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { servers: number }
+      expect(stored.servers).toBeGreaterThan(0.2)
+    })
+
+    fireEvent.keyDown(screen.getByTestId('sep-detail'), { key: 'ArrowDown' })
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { detail: number }
+      expect(stored.detail).toBeGreaterThan(0.3)
+    })
+
+    fireEvent.doubleClick(screen.getByTestId('sep-servers'))
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { servers: number }
+      expect(stored.servers).toBe(0.2)
+    })
+  })
+})
+
+describe('a server the page cannot change', () => {
+  it('offers no switch and no gear, and still takes a test connection', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list')
+        return listed(view({ source: 'profile', editable: false, entryId: 'mcp-clion', readOnlyReason: 'profile' }))
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('editServer') as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByText('clion'))
+    const test = (await screen.findByRole('button', { name: 'testConnection' })) as HTMLButtonElement
+    expect(test.disabled).toBe(false)
+  })
+})
+
+describe('the arguments of a tool', () => {
+  const schema = (name: string): unknown => ({
+    type: 'object',
+    properties: { [name]: { type: 'string' } },
+    required: [name],
+  })
+
+  const probed = (): Answer => ({
+    status: 200,
+    body: {
+      ok: true,
+      value: {
+        server: view(),
+        probe: {
+          ok: true,
+          toolCount: 2,
+          truncated: false,
+          durationMs: 5,
+          probedAt: '2026-11-25T00:00:00.000Z',
+          tools: [
+            { name: 'alpha', description: 'The first tool.', inputSchema: schema('message') },
+            { name: 'beta', description: 'The second tool.', inputSchema: schema('path') },
+          ],
+        },
+      },
+    },
+  })
+
+  /** Render the page and pick the server, so its tools are listed. */
+  async function openTools(): Promise<void> {
+    render(<McpPanel t={t} />)
+    fireEvent.click(await screen.findByText('clion'))
+    await screen.findByText('alpha')
+  }
+
+  /** The row of that tool in the list, not the heading the detail band shows once it is picked. */
+  const toolRow = (name: string): HTMLElement => within(screen.getByTestId('split-tools')).getByText(name)
+
+  it('keeps what was typed when another tool is picked in between', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    const box = screen.getByLabelText('arguments') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '{"message":"edited"}' } })
+
+    fireEvent.click(toolRow('beta'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toContain('"path"')
+
+    fireEvent.click(toolRow('alpha'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe('{"message":"edited"}')
+  })
+
+  it('keeps what was typed when the same tool is picked again', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '{"message":"kept"}' } })
+    fireEvent.click(toolRow('alpha'))
+
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe('{"message":"kept"}')
+  })
+
+  it('puts the example back when it is reset, and remembers that too', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    const prefilled = (screen.getByLabelText('arguments') as HTMLTextAreaElement).value
+    expect(prefilled).toContain('"message"')
+
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '{"message":"changed"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'reset' }))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
+
+    fireEvent.click(toolRow('beta'))
+    fireEvent.click(toolRow('alpha'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
+  })
+
+  it('asks for a JSON object in the page language when the box holds something else', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '[1, 2]' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    // The panel passes the key through its `t`, so a word that is still English here would show as a key.
+    await screen.findByText('argumentsNotObject')
+  })
+})
+
+describe('the server form', () => {
+  it('keeps both transports while it is open and saves the one it shows', async () => {
+    const calls = stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      if (call.action === 'save') return { status: 200, body: { ok: true, value: view({ transport: 'stdio' }) } }
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    fireEvent.click(screen.getByLabelText('editServer'))
+
+    const dialog = await screen.findByRole('dialog')
+    const url = screen.getByLabelText('url') as HTMLInputElement
+    expect(url.value).toBe('http://127.0.0.1:64362/stream')
+
+    fireEvent.change(screen.getByLabelText('transport'), { target: { value: 'stdio' } })
+    fireEvent.change(screen.getByLabelText('command'), { target: { value: 'node' } })
+    fireEvent.change(screen.getByLabelText('transport'), { target: { value: 'streamable-http' } })
+
+    expect((screen.getByLabelText('url') as HTMLInputElement).value).toBe('http://127.0.0.1:64362/stream')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'save' }))
+
+    await waitFor(() => expect(calls.some((call) => call.action === 'save')).toBe(true))
+    expect(calls.find((call) => call.action === 'save')?.patch).toMatchObject({
+      transport: 'streamable-http',
+      url: 'http://127.0.0.1:64362/stream',
+    })
+    expect(calls.find((call) => call.action === 'save')?.patch).not.toHaveProperty('command')
+  })
+
+  it('asks once more before it deletes the server', async () => {
+    const calls = stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      if (call.action === 'remove') return { status: 200, body: { ok: true, value: { servers: [] } } }
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    fireEvent.click(screen.getByLabelText('editServer'))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'deleteServer' }))
+    expect(calls.some((call) => call.action === 'remove')).toBe(false)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'delete' }))
+    await waitFor(() => expect(calls.some((call) => call.action === 'remove')).toBe(true))
+    expect(calls.find((call) => call.action === 'remove')).toMatchObject({ name: 'clion' })
+  })
+})
