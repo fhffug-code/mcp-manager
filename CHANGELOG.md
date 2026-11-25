@@ -65,5 +65,5 @@ All notable changes to this project are documented here. The format follows [Kee
 - The probe summary of a tool list asked for two words the dictionaries did not have, and nothing showed how many tools were returned once the list was cut short. Both are words now, and the summary says when the list was truncated.
 - A test call whose argument box did not hold a JSON object printed an English sentence in every language. The page now asks for one in its own words, and the parser reports why it refused instead of returning a sentence.
 
-[Unreleased]: https://github.com/fhffug/mcp-manager/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/fhffug/mcp-manager/releases/tag/v0.1.0
+[Unreleased]: https://github.com/fhffug-code/mcp-manager/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/fhffug-code/mcp-manager/releases/tag/v0.1.0
