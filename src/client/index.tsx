@@ -1,6 +1,6 @@
 /** Browser entry: one panel in the sidebar, and the full page it opens. */
 import type { ClientContext } from './context.js'
-import { en, zh } from './locales.js'
+import { dictionaries } from './locales.js'
 import { McpPanel } from './McpPanel.js'
 
 /** The locale namespace this page owns. */
@@ -24,7 +24,7 @@ function McpPanelIcon() {
 /** Register the row and the page; the Harness puts the row after Plugins and the marketplace. */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.locale.register(NS, { en, zh }) as () => void, 'mcp-workbench/dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, dictionaries) as () => void, 'mcp-workbench/dictionaries')
   ctx.slots.inject('sidebar.panellist', () =>
     ctx.slots.register(
       {

@@ -57,16 +57,16 @@ describe('the MCP page registration', () => {
     expect(list?.options.locale).toBe(NS)
   })
 
-  it('labels the row MCP in both languages', () => {
+  it('labels the row MCP in every language and registers all eight', () => {
     const { ctx, registrations, dictionaries } = fakeClient()
     apply(ctx as never)
     const list = registrations.find((entry) => entry.options.name === 'sidebar.panellist')
     expect(list?.options.label?.()).toBe(`${NS}.panel`)
 
-    const registered = dictionaries[0] as { entries: { en: Record<string, string>; zh: Record<string, string> } }
-    expect(registered.entries.en['panel']).toBe('MCP')
-    expect(registered.entries.zh['panel']).toBe('MCP')
-    expect(registered.entries.zh['title']).toBe('MCP 管理')
+    const registered = dictionaries[0] as { entries: Record<string, Record<string, string>> }
+    expect(Object.keys(registered.entries).sort()).toEqual(['de', 'en', 'es', 'fr', 'ja', 'pt', 'ru', 'zh'])
+    for (const entries of Object.values(registered.entries)) expect(entries['panel']).toBe('MCP')
+    expect(registered.entries['zh']?.['title']).toBe('MCP 管理')
   })
 
   it('renders a component for both registrations', () => {

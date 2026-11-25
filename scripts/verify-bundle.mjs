@@ -47,8 +47,14 @@ if (client !== '') {
   }
 }
 
-const locale = JSON.parse((await read('locale/en.json')) || '{}')
-if (typeof locale.meta?.title !== 'string') failures.push('locale/en.json must declare meta.title')
+// Every language the settings offer needs its own metadata file, or the bundle list falls back to English.
+const LANGUAGES = ['zh', 'en', 'ja', 'es', 'fr', 'de', 'ru', 'pt']
+for (const language of LANGUAGES) {
+  const metadata = JSON.parse((await read(`locale/${language}.json`)) || '{}')
+  if (typeof metadata.meta?.title !== 'string') failures.push(`locale/${language}.json must declare meta.title`)
+  if (typeof metadata.meta?.description !== 'string')
+    failures.push(`locale/${language}.json must declare meta.description`)
+}
 
 if (failures.length > 0) {
   console.error('bundle verification failed:')

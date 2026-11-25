@@ -138,7 +138,10 @@ export function patchOf(draft: Draft, transport: TransportKind): ServerPatch {
   return patch
 }
 
-export type ParsedArguments = { ok: true; value: Record<string, unknown> } | { ok: false; message: string }
+export type ParsedArguments =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; reason: 'invalid-json'; detail: string }
+  | { ok: false; reason: 'not-object' }
 
 /** Read the arguments textarea; an empty box means no arguments. */
 export function parseArguments(text: string): ParsedArguments {
@@ -148,11 +151,9 @@ export function parseArguments(text: string): ParsedArguments {
   try {
     parsed = JSON.parse(trimmed)
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    return { ok: false, reason: 'invalid-json', detail: error instanceof Error ? error.message : String(error) }
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, message: 'arguments must be a JSON object' }
-  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { ok: false, reason: 'not-object' }
   return { ok: true, value: parsed as Record<string, unknown> }
 }
 
