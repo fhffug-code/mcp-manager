@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The version tag to publish, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Work out the tag
+        id: tag
+        env:
+          FROM_EVENT: ${{ github.event.inputs.tag }}
+          FROM_REF: ${{ github.ref_name }}
+        run: echo "value=${FROM_EVENT:-$FROM_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.value }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build the bundle
+        run: npm run build
+
+      - name: Verify the bundle manifest and artifacts
+        run: npm run verify:bundle
+
+      - name: Pack the installable zip
+        id: pack
+        run: node scripts/pack-release.mjs
+
+      - name: Write the release notes
+        env:
+          VERSION: ${{ steps.pack.outputs.version }}
+          ASSET: ${{ steps.pack.outputs.asset }}
+          SHA256: ${{ steps.pack.outputs.sha256 }}
+        run: node scripts/release-notes.mjs "$VERSION" --asset "$ASSET" --sha256 "$SHA256" --out dist/release-notes.md
+
+      - name: Publish or top up the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+          ASSET: ${{ steps.pack.outputs.asset }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "the release already exists; uploading the asset"
+            gh release upload "$TAG" "dist/$ASSET" --clobber
+          else
+            gh release create "$TAG" "dist/$ASSET" \
+              --title "$TAG - MCP Workbench" \
+              --notes-file dist/release-notes.md \
+              --verify-tag
+          fi
+
+      - name: Report where it landed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          echo "the release is at"
+          gh release view "$TAG" --json url --jq .url
