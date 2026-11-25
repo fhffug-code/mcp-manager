@@ -10,6 +10,7 @@ import {
   rowsOf,
   splitArgs,
 } from '../src/client/format.js'
+import { en } from '../src/client/locales.js'
 import type { ServerView } from '../src/types/index.js'
 
 const view = (overrides: Partial<ServerView> = {}): ServerView => ({
@@ -158,9 +159,11 @@ describe('parseArguments', () => {
     expect(parseArguments('')).toEqual({ ok: true, value: {} })
     expect(parseArguments('  ')).toEqual({ ok: true, value: {} })
     expect(parseArguments('{"a":1}')).toEqual({ ok: true, value: { a: 1 } })
-    expect(parseArguments('[1]')).toEqual({ ok: false, message: 'arguments must be a JSON object' })
-    expect(parseArguments('null')).toEqual({ ok: false, message: 'arguments must be a JSON object' })
-    expect(parseArguments('{oops}').ok).toBe(false)
+    expect(parseArguments('[1]')).toEqual({ ok: false, reason: 'not-object' })
+    expect(parseArguments('null')).toEqual({ ok: false, reason: 'not-object' })
+    const broken = parseArguments('{oops}')
+    expect(broken.ok).toBe(false)
+    expect(broken.ok ? '' : broken.reason).toBe('invalid-json')
   })
 })
 
@@ -187,10 +190,12 @@ describe('contentText', () => {
 })
 
 describe('probeHeadline', () => {
-  const t = (key: string): string => key
+  // The real dictionary, so a missing word shows up here instead of as a raw key in the page.
+  const words: Record<string, string> = en
+  const t = (key: string): string => words[key] ?? key
 
   it('says when nothing has probed yet', () => {
-    expect(probeHeadline(undefined, t)).toBe('neverProbed')
+    expect(probeHeadline(undefined, t)).toBe('Not probed yet')
   })
 
   it('reports a failure with its message', () => {
@@ -199,17 +204,17 @@ describe('probeHeadline', () => {
         { ok: false, toolCount: 0, probedAt: '', durationMs: 0, error: { stage: 'transport', message: 'nope' } },
         t,
       ),
-    ).toBe('probeFailed: nope')
-    expect(probeHeadline({ ok: false, toolCount: 0, probedAt: '', durationMs: 0 }, t)).toBe('probeFailed: ')
+    ).toBe('Probe failed: nope')
+    expect(probeHeadline({ ok: false, toolCount: 0, probedAt: '', durationMs: 0 }, t)).toBe('Probe failed: ')
   })
 
   it('reports the tool count and whether the list was cut', () => {
     expect(probeHeadline({ ok: true, toolCount: 4, probedAt: '', durationMs: 0, tools: [], truncated: false }, t)).toBe(
-      '4 toolsCount',
+      '4 tools',
     )
     expect(probeHeadline({ ok: true, toolCount: 4, probedAt: '', durationMs: 0, tools: [], truncated: true }, t)).toBe(
-      '4 toolsCount (truncated)',
+      '4 tools (truncated)',
     )
-    expect(probeHeadline({ ok: true, toolCount: 4, probedAt: '', durationMs: 0 }, t)).toBe('4 toolsCount')
+    expect(probeHeadline({ ok: true, toolCount: 4, probedAt: '', durationMs: 0 }, t)).toBe('4 tools')
   })
 })

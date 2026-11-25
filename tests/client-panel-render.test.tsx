@@ -286,6 +286,18 @@ describe('the arguments of a tool', () => {
     fireEvent.click(toolRow('alpha'))
     expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
   })
+
+  it('asks for a JSON object in the page language when the box holds something else', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '[1, 2]' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    // The panel passes the key through its `t`, so a word that is still English here would show as a key.
+    await screen.findByText('argumentsNotObject')
+  })
 })
 
 describe('the server form', () => {

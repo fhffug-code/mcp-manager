@@ -33,6 +33,8 @@ CI runs exactly these on Node 22, plus the coverage run. Keep the branch green b
 - **No secret in a browser payload.** `src/edit.ts` masks a value whose key looks like a secret; the client receives a presence marker and nothing more.
 - **One operation, one method.** A new capability is a method on `Workbench`, then an action on the route, then a row in the tool definition, then a control on the page. Do not put logic in the route, the tool or the component.
 - **Every failure carries a code.** `WorkbenchFailure` with a `FailureCode`; the route maps it to a status, the tool renders it as `<code>: <message>`.
+- **Every visible word comes from a dictionary.** `src/client/locales.ts` carries one entry per language the Harness ships with, `en` first: it defines the keys, and the other seven are typed against it, so a forgotten key fails `npm run typecheck`. A new string belongs there, with every language filled in — never inline in a component.
+- **Keep the two manuals in step.** [README.md](README.md) is English and [README.zh.md](README.zh.md) is Chinese; a change to one is a change to the other. `locale/<id>.json` holds the bundle metadata for the same eight languages.
 - **Tests come with the change.** A new action needs its refusal paths, and a parser change needs the value that used to break.
 
 ## Adding a server field

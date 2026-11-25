@@ -12,7 +12,9 @@ operations are exposed to the model through the `mcp_workbench` tool. Both surfa
 and one same-origin route (`POST /api/mcp-workbench`) carries the browser traffic. The three server
 sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows of the profile patch, read-only here),
 `managed` (the `servers` map of a profile row whose name is `@deepseek-ai/dsh-mcp-manager`, the only
-place this plugin writes) and `manager` (whatever else registered on `mcpManager`, read-only).
+place this plugin writes) and `manager` (whatever else registered on `mcpManager`, read-only). The page
+speaks the eight languages the Harness ships with; the manual is [README.md](README.md) in English and
+[README.zh.md](README.zh.md) in Chinese, and the two stay in step.
 
 **中文。** `@local/dsh-mcp-workbench` 是一个用 TypeScript 编写、运行在 Node 22 上的 DeepSeek Harness
 插件。它是装进 profile 的私有 bundle，不发布到任何 registry。它在左侧栏占一个入口「MCP」（排在【插件】
@@ -20,7 +22,8 @@ place this plugin writes) and `manager` (whatever else registered on `mcpManager
 通过 `mcp_workbench` 工具暴露给模型。两个界面共用同一个 service，浏览器只走一条同源路由
 `POST /api/mcp-workbench`。三个来源分别是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client`
 静态行，这里只读）、`managed`（profile 里名字是 `@deepseek-ai/dsh-mcp-manager` 的那一行的 `servers`
-映射，也是本插件唯一写入的地方）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
+映射，也是本插件唯一写入的地方）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。页面支持 Harness
+自带的八种语言；手册是英文 [README.md](README.md) 与中文 [README.zh.md](README.zh.md)，两份要同步改动。
 
 ## 2. How to run commands on this machine / 这台机器怎么跑命令
 
@@ -170,6 +173,11 @@ release 线也带上这个修复。
   by `--dsh-frame-top-clearance`, because it is not the conversation.
 - **The client does not import Harness client packages.** `react` arrives through `require('react')`;
   the bundle is wrapped by `scripts/build-client.mjs`.
+- **Every visible word comes from a dictionary.** `src/client/locales.ts` is the only place prose lives:
+  `en` is the shape, `LocaleKey` is derived from it, and each of the other seven languages is a
+  `Record<LocaleKey, string>`, so a forgotten key fails `npm run typecheck` instead of showing blank.
+  A helper that renders words takes `t` as an argument (`probeHeadline()` does) rather than importing
+  the dictionary. `locale/<id>.json` carries the same eight ids for the bundle metadata.
 - **Tests come with the change.** New action → its refusal paths; parser change → the value that broke.
 
 **中文。**
@@ -195,6 +203,10 @@ release 线也带上这个修复。
   不一致时用户一点那一行就抛错。页面顶部要按 `--dsh-frame-top-clearance` 留白，因为它不是会话页。
 - **客户端不 import Harness 的客户端包**：`react` 通过 `require('react')` 进来，bundle 由
   `scripts/build-client.mjs` 包裹。
+- **所有可见文案都来自字典**：`src/client/locales.ts` 是唯一放文案的地方——`en` 定形状，`LocaleKey` 由它
+  推导，其余七种语言都是 `Record<LocaleKey, string>`，漏键在 `npm run typecheck` 就报错而不是显示空白。
+  会渲染文案的辅助函数把 `t` 当参数传进去（`probeHeadline()` 就是这么做的），不要直接 import 字典。
+  bundle 元数据 `locale/<id>.json` 用同样的八个 id。
 - **测试随改动一起提交**：新动作要有拒绝路径，解析器改动要有当初坏掉的那个值。
 
 ## 9. Traps that bite / 会咬人的坑

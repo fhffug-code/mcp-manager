@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
 import type { CallResult, ProbeResult, ProbeTool, ServerView } from '../types/index.js'
 import { createApi } from './api.js'
 import type { Translate } from './context.js'
-import { contentText, durationText, parseArguments } from './format.js'
+import { contentText, durationText, parseArguments, probeHeadline } from './format.js'
 import { JsonText, JsonTree } from './JsonView.js'
 import { DEFAULT_LAYOUT, LIMITS, readLayout, writeLayout } from './layout.js'
 import type { Layout } from './layout.js'
@@ -251,7 +251,7 @@ export function McpPanel({ t }: PanelProps) {
     if (selected === undefined || tool === undefined) return
     const parsed = parseArguments(argsText)
     if (!parsed.ok) {
-      setCallError(parsed.message)
+      setCallError(parsed.reason === 'not-object' ? t('argumentsNotObject') : parsed.detail)
       return
     }
     setCallError(undefined)
@@ -411,9 +411,7 @@ export function McpPanel({ t }: PanelProps) {
               ) : (
                 <>
                   <div style={labelStyle}>
-                    {probe.ok
-                      ? `${probe.toolCount} ${t('toolsCount')} · ${durationText(probe.durationMs)}`
-                      : `${t('probeFailed')}: ${probe.error?.message ?? ''}`}
+                    {probeHeadline(probe, t)} · {durationText(probe.durationMs)}
                   </div>
                   <div className="mcpw-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     {visibleTools.length === 0 ? (

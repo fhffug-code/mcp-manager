@@ -1,8 +1,8 @@
 # MCP Workbench
 
-A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after **Plugins** and the plugin marketplace. It shows the MCP servers this profile mounts, edits the ones the official `@deepseek-ai/dsh-mcp-manager` row holds, switches them on and off, probes them for the tools they expose, and lets you send a tool call with arguments that were prefilled from the tool's own schema — from that page and from a tool the model can use.
+English | [中文](README.zh.md)
 
-**中文简介**：这个插件在左侧栏【插件】【插件市场】之后加一个「MCP」入口，进来是「MCP 管理」页面：查看当前 profile 挂载的所有 MCP 服务器、编辑官方 `@deepseek-ai/dsh-mcp-manager` 那一行里的服务器（增删、改配置、启停）、探测工具并直接传参调用（参数按该工具的 inputSchema 预填）；同时注册一个 `mcp_workbench` 工具，让模型也能做同样的事。所有改动都走 DSH 官方的 ConfigEditor，不会手写 profile 配置文件。
+A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after **Plugins** and the plugin marketplace. It shows the MCP servers this profile mounts, edits the ones the official `@deepseek-ai/dsh-mcp-manager` row holds, switches them on and off, probes them for the tools they expose, and lets you send a tool call with arguments that were prefilled from the tool's own schema — from that page and from a tool the model can use.
 
 ## What it does
 
@@ -12,6 +12,7 @@ A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after 
 - **Probe for tools.** The probe keeps its own MCP session per server — opened on first use, reused by later probes and calls, closed when the server is written, restarted or the plugin stops — so it works on a disabled server, does not disturb the connection the agent is using, and returns tool names, descriptions and input schemas with a name and schema budget.
 - **Test a call.** Pick a tool, get its arguments prefilled from the input schema, send them, and read the answer three ways: JSON, a foldable tree, or the raw request and response.
 - **One logic, two surfaces.** The page and the model-facing tool call the same Host service, so both behave the same way.
+- **Speaks your language.** Every word on the page follows **Settings → General → Language** — the eight the Harness ships with — and switches as soon as you pick another one, without a reload.
 
 ## Requirements
 
