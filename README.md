@@ -189,6 +189,7 @@ npm run format:check
 npm test              # vitest, includes a real stdio MCP fixture server
 npm run build         # tsc + the client bundle
 npm run verify:bundle # checks the manifest, the patch and both artifacts
+npm run pack          # dist/dsh-mcp-workbench-<version>.zip, ready to upload
 ```
 
 The layout:
@@ -205,8 +206,10 @@ The layout:
 - `src/client/` — the sidebar panel: the page, the tool editor, the schema prefill and the two result views.
 - `tests/` — the suite, including `tests/fixtures/stdio-server.mjs`.
 
-`main` is the development line and `release/<minor>` branches hold a version being stabilised: see
-[docs/GITFLOW.md](docs/GITFLOW.md). Changes are logged in [CHANGELOG.md](CHANGELOG.md).
+`main` is the development line and `release` is the published one: work lands on `main` by pull
+request, a version is prepared on `release`, and `git push origin v<version>` there makes the
+**Release** workflow build the zip and publish it. See [docs/GITFLOW.md](docs/GITFLOW.md). Changes are
+logged in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

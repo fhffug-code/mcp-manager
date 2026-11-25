@@ -53,6 +53,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pack": "node scripts/pack-release.mjs",
     "verify:bundle": "node scripts/verify-bundle.mjs"
   },
   "dependencies": {
