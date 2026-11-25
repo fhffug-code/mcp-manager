@@ -2,9 +2,10 @@
 
 export type TransportKind = 'stdio' | 'streamable-http'
 
-export type ServerSource = 'profile' | 'managed' | 'plugin' | 'manager'
+export type ServerSource = 'profile' | 'managed' | 'manager'
 
-export type ReadOnlyReason = 'overridden' | 'unaddressable' | 'manager' | 'unsupported' | 'config-editor-unavailable'
+export type ReadOnlyReason =
+  'profile' | 'overridden' | 'unaddressable' | 'manager' | 'unsupported' | 'config-editor-unavailable'
 
 /** One env or header entry; a secret keeps its value on the Host. */
 export interface ServerField {

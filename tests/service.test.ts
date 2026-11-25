@@ -1,10 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { Workbench, transportOfSpec } from '../src/service.js'
+import { describe, expect, it } from 'vitest'
+import { Workbench } from '../src/service.js'
 import { WorkbenchFailure } from '../src/failures.js'
-import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
-import { PLUGIN_NAME } from '../src/version.js'
+import { DEFAULT_CONFIG } from '../src/config.js'
 import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN } from '../src/inventory.js'
-import { entry, fakeContext, fakeCredentials, fakeEditor, fakeManager, fakePluginManager } from './helpers/fakes.js'
+import { entry, fakeContext, fakeCredentials, fakeEditor, fakeManager } from './helpers/fakes.js'
 import type { ConnectionPool } from '../src/connection.js'
 import type { DshConfigLayer } from '../src/types/dsh.js'
 
@@ -31,11 +30,6 @@ const clientLayer = (id: string, name: string, config: Record<string, unknown>) 
   entry: entry({ id, name: MCP_CLIENT_PLUGIN, config }),
   inherited: {},
   override: config,
-})
-
-const ownLayer = (servers: WorkbenchConfig['servers'] = {}) => ({
-  entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers } }),
-  inherited: {},
 })
 
 const managedLayer = (servers: Record<string, unknown>) => ({
@@ -66,43 +60,32 @@ interface Harness {
   workbench: Workbench
   editor: ReturnType<typeof fakeEditor>
   manager: ReturnType<typeof fakeManager>
-  pluginManager: ReturnType<typeof fakePluginManager>
-  servers: () => WorkbenchConfig['servers']
 }
 
 function harness(
   options: {
     layers?: DshConfigLayer[]
-    servers?: WorkbenchConfig['servers']
     manager?: ReturnType<typeof fakeManager>
     editor?: boolean
     managerService?: boolean
-    pluginManager?: ReturnType<typeof fakePluginManager>
-    pluginService?: boolean
     credentials?: ReturnType<typeof fakeCredentials>
     connections?: ConnectionPool
   } = {},
 ): Harness {
-  let servers = options.servers ?? {}
   const layers = options.layers ?? []
   const editor = fakeEditor(layers)
   const manager = options.manager ?? fakeManager()
-  const pluginManager = options.pluginManager ?? fakePluginManager()
   const ctx = fakeContext({
     ...(options.editor === false ? {} : { editor }),
     ...(options.managerService === false ? {} : { manager }),
-    ...(options.pluginService === false ? {} : { pluginManager }),
     ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
   })
   const workbench = new Workbench({
     ctx,
-    config: () => ({ ...DEFAULT_CONFIG, servers }),
-    applyServers: (next) => {
-      servers = next
-    },
+    config: () => ({ ...DEFAULT_CONFIG }),
     connections: options.connections ?? fakeConnections().pool,
   })
-  return { workbench, editor, manager, pluginManager, servers: () => servers }
+  return { workbench, editor, manager }
 }
 
 const profileRow = {
@@ -121,7 +104,7 @@ describe('reads', () => {
 
   it('reports a cached probe beside the server', async () => {
     const { workbench } = harness({
-      servers: { creds: { transport: 'stdio', command: 'node', args: ['${credential:NOPE}'] } },
+      layers: [managedLayer({ creds: { transport: 'stdio', command: 'node', args: ['${credential:NOPE}'] } })],
     })
     const result = await workbench.probe('creds')
     expect(result.ok).toBe(false)
@@ -132,7 +115,7 @@ describe('reads', () => {
 describe('probe and call', () => {
   it('reports an unresolved credential without connecting', async () => {
     const { workbench } = harness({
-      servers: { creds: { transport: 'stdio', command: 'node', env: { A: '${credential:A}' } } },
+      layers: [managedLayer({ creds: { transport: 'stdio', command: 'node', env: { A: '${credential:A}' } } })],
     })
     const result = await workbench.probe('creds')
     expect(result).toMatchObject({ ok: false, toolCount: 0, error: { stage: 'credential' } })
@@ -140,7 +123,7 @@ describe('probe and call', () => {
 
   it('serves the cached probe until it asks for a fresh one', async () => {
     const { workbench } = harness({
-      servers: { creds: { transport: 'stdio', command: 'node', env: { A: '${credential:A}' } } },
+      layers: [managedLayer({ creds: { transport: 'stdio', command: 'node', env: { A: '${credential:A}' } } })],
     })
     const first = await workbench.probe('creds')
     expect(await workbench.probe('creds')).toBe(first)
@@ -150,27 +133,20 @@ describe('probe and call', () => {
 
   it('shares one probe while it is running', async () => {
     const { workbench } = harness({
-      servers: { creds: { transport: 'stdio', command: 'node', env: { A: '${credential:A}' } } },
+      layers: [managedLayer({ creds: { transport: 'stdio', command: 'node', env: { A: '${credential:A}' } } })],
     })
     const [first, second] = await Promise.all([workbench.probe('creds'), workbench.probe('creds')])
     expect(second).toBe(first)
   })
 
   it('refuses to probe a server with no transport', async () => {
-    const { workbench } = harness({
-      layers: [
-        {
-          entry: entry({ id: 'mcp-broken', name: MCP_CLIENT_PLUGIN, config: { serverName: 'broken' } }),
-          inherited: {},
-        },
-      ],
-    })
+    const { workbench } = harness({ layers: [managedLayer({ broken: { serverName: 'broken' } })] })
     expect(await failureCode(() => workbench.probe('broken'))).toBe('invalid-config')
   })
 
   it('reports an unresolved credential on a call', async () => {
     const { workbench } = harness({
-      servers: { creds: { transport: 'streamable-http', url: 'https://x/${credential:A}' } },
+      layers: [managedLayer({ creds: { transport: 'streamable-http', url: 'https://x/${credential:A}' } })],
     })
     const result = await workbench.call('creds', { tool: 'echo' })
     expect(result).toMatchObject({ ok: false, content: [], error: { stage: 'credential' } })
@@ -179,7 +155,11 @@ describe('probe and call', () => {
   it('asks the credential store before it connects', async () => {
     const credentials = fakeCredentials({ A: 'stored-secret' })
     const { workbench } = harness({
-      servers: { creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } } },
+      layers: [
+        managedLayer({
+          creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } },
+        }),
+      ],
       credentials,
     })
     const result = await workbench.probe('creds')
@@ -190,7 +170,11 @@ describe('probe and call', () => {
   it('reports a credential the store does not hold', async () => {
     const credentials = fakeCredentials()
     const { workbench } = harness({
-      servers: { creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } } },
+      layers: [
+        managedLayer({
+          creds: { transport: 'stdio', command: 'dsh-no-such-command-xyz', env: { A: '${credential:A}' } },
+        }),
+      ],
       credentials,
     })
     const result = await workbench.probe('creds')
@@ -199,165 +183,87 @@ describe('probe and call', () => {
   })
 
   it('refuses a call to a server with no transport', async () => {
-    const { workbench } = harness({
-      layers: [
-        {
-          entry: entry({ id: 'mcp-broken', name: MCP_CLIENT_PLUGIN, config: { serverName: 'broken' } }),
-          inherited: {},
-        },
-      ],
-    })
+    const { workbench } = harness({ layers: [managedLayer({ broken: { serverName: 'broken' } })] })
     expect(await failureCode(() => workbench.call('broken', { tool: 'echo' }))).toBe('invalid-config')
   })
 })
 
-describe('profile writes', () => {
-  it('writes the raw layer with the patch applied', async () => {
-    const { workbench, editor } = harness({
-      layers: [
-        clientLayer('mcp-github', 'github', {
-          serverName: 'github',
-          transport: 'stdio',
-          command: 'gh.exe',
-          env: { GITHUB_TOKEN: 'evaluated' },
-        }),
-      ],
-    })
-    await workbench.save('github', { env: { GITHUB_TOKEN: '!!js process.env.TOKEN' } })
-    expect(editor.edits).toHaveLength(1)
-    expect(editor.edits[0]?.next).toEqual({
-      serverName: 'github',
-      transport: 'stdio',
-      command: 'gh.exe',
-      env: { GITHUB_TOKEN: { __jsExpr: 'process.env.TOKEN' } },
-    })
-  })
-
-  it('refuses a patch that would make the row invalid', async () => {
-    const { workbench, editor } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow)] })
-    expect(await failureCode(() => workbench.save('a', { command: null }))).toBe('invalid-config')
-    expect(editor.edits).toEqual([])
-  })
-
-  it('refuses to write a manager-governed server', async () => {
-    const manager = fakeManager([{ name: 'external', configured: true, status: { state: 'ready' } }])
-    const { workbench, editor } = harness({ manager })
-    expect(await failureCode(() => workbench.save('external', { url: 'https://y/mcp' }))).toBe('not-editable')
-    expect(editor.edits).toEqual([])
-  })
-
-  it('refuses to store servers without a config editor', async () => {
-    const { workbench } = harness({ editor: false, layers: [] })
-    expect(
-      await failureCode(() => workbench.add({ name: 'fresh', spec: { transport: 'stdio', command: 'node' } })),
-    ).toBe('config-editor-unavailable')
-  })
-})
-
-describe('plugin writes', () => {
-  it('stores a patched server in its own row and re-registers it', async () => {
-    const { workbench, editor, manager, servers } = harness({
-      layers: [ownLayer({ mine: { transport: 'stdio', command: 'node' } })],
-      servers: { mine: { transport: 'stdio', command: 'node' } },
-    })
-    workbench.syncRegistrations()
-    await workbench.save('mine', { args: ['server.mjs'], toolCallTimeoutMs: 1000 })
-    expect(editor.edits.at(-1)?.next).toEqual({
-      servers: { mine: { transport: 'stdio', command: 'node', args: ['server.mjs'], toolCallTimeoutMs: 1000 } },
-    })
-    expect(servers().mine).toMatchObject({ args: ['server.mjs'] })
-    expect(manager.registered.get('mine')).toMatchObject({ args: ['server.mjs'] })
-  })
-
-  it('refuses a plugin patch that is invalid', async () => {
-    const { workbench } = harness({
-      layers: [ownLayer({ mine: { transport: 'stdio', command: 'node' } })],
-      servers: { mine: { transport: 'stdio', command: 'node' } },
-    })
-    expect(await failureCode(() => workbench.save('mine', { command: null }))).toBe('invalid-config')
-  })
-
-  it('refuses to store servers when its own row is missing', async () => {
-    const { workbench } = harness({ layers: [], servers: { mine: { transport: 'stdio', command: 'node' } } })
-    expect(await failureCode(() => workbench.remove('mine'))).toBe('not-editable')
-  })
-
-  it('adds a valid server and refuses the invalid forms', async () => {
-    const { workbench, editor, manager, servers } = harness({ layers: [ownLayer()] })
-    expect(await failureCode(() => workbench.add({ name: 'two words', spec: {} }))).toBe('invalid-request')
-    expect(await failureCode(() => workbench.add({ name: 'bad', spec: { transport: 'stdio' } }))).toBe('invalid-config')
+describe('writes on the manager row', () => {
+  it('stores a new server in the manager row', async () => {
+    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
+    const { workbench } = harness({ layers: [layer] })
 
     const view = await workbench.add({ name: 'added', spec: { transport: 'stdio', command: 'node', extra: 1 } })
-    expect(view).toMatchObject({ name: 'added', source: 'plugin', enabled: true, endpoint: 'node' })
-    expect(servers().added).toEqual({ transport: 'stdio', command: 'node' })
-    expect(manager.registered.has('added')).toBe(true)
-    expect(editor.edits).toHaveLength(1)
+    expect(view).toMatchObject({ name: 'added', source: 'managed', enabled: true, endpoint: 'node' })
+    expect(recordsOf(layer)['added']).toEqual({ transport: 'stdio', command: 'node' })
+    expect(recordsOf(layer)['clion']).toMatchObject({ url: 'http://127.0.0.1/stream' })
+  })
+
+  it('creates the map when the row holds none yet', async () => {
+    const layer = { entry: entry({ id: 'mcp-manager', name: MCP_MANAGER_PLUGIN, config: {} }), inherited: {} }
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.add({ name: 'fresh', spec: { transport: 'stdio', command: 'node' } })
+    const stored = layer.entry.options.config?.['servers']
+    expect(stored).toEqual({ fresh: { transport: 'stdio', command: 'node' } })
+  })
+
+  it('refuses the invalid names and specs of an add', async () => {
+    const { workbench, editor } = harness({ layers: [managedLayer({})] })
+    expect(await failureCode(() => workbench.add({ name: 'two words', spec: {} }))).toBe('invalid-request')
+    expect(await failureCode(() => workbench.add({ name: 'bad', spec: { transport: 'stdio' } }))).toBe('invalid-config')
+    expect(editor.edits).toEqual([])
   })
 
   it('refuses a name another source already uses', async () => {
-    const { workbench } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow), ownLayer()] })
+    const { workbench } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow), managedLayer({})] })
     expect(await failureCode(() => workbench.add({ name: 'a', spec: { transport: 'stdio', command: 'node' } }))).toBe(
       'name-conflict',
     )
   })
 
-  it('removes a plugin server and refuses the others', async () => {
-    const { workbench, manager, servers } = harness({
-      layers: [clientLayer('mcp-a', 'a', profileRow), ownLayer({ mine: { transport: 'stdio', command: 'node' } })],
-      servers: { mine: { transport: 'stdio', command: 'node' } },
+  it('refuses to add when the profile has no manager row', async () => {
+    const { workbench } = harness({ layers: [] })
+    expect(
+      await failureCode(() => workbench.add({ name: 'fresh', spec: { transport: 'stdio', command: 'node' } })),
+    ).toBe('not-editable')
+  })
+
+  it('refuses to add without a config editor', async () => {
+    const { workbench } = harness({ editor: false })
+    expect(
+      await failureCode(() => workbench.add({ name: 'fresh', spec: { transport: 'stdio', command: 'node' } })),
+    ).toBe('config-editor-unavailable')
+  })
+
+  it('patches a managed server and leaves its neighbours alone', async () => {
+    const layer = managedLayer({
+      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
+      other: { transport: 'stdio', command: 'node' },
     })
-    workbench.syncRegistrations()
-    expect(await failureCode(() => workbench.remove('a'))).toBe('not-editable')
-    await workbench.remove('mine')
-    expect(servers()).toEqual({})
-    expect(manager.registered.has('mine')).toBe(false)
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.save('clion', { toolCallTimeoutMs: 5000 })
+    expect(recordsOf(layer)['clion']).toMatchObject({ url: 'http://127.0.0.1/stream', toolCallTimeoutMs: 5000 })
+    expect(recordsOf(layer)['other']).toEqual({ transport: 'stdio', command: 'node' })
   })
 
-  it('enables and disables a plugin server', async () => {
-    const { workbench, manager, servers } = harness({
-      layers: [ownLayer({ mine: { transport: 'stdio', command: 'node' } })],
-      servers: { mine: { transport: 'stdio', command: 'node' } },
+  it('refuses a patch that would make the record invalid', async () => {
+    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
+    const { workbench, editor } = harness({ layers: [layer] })
+    expect(await failureCode(() => workbench.save('clion', { url: null }))).toBe('invalid-config')
+    expect(editor.edits).toEqual([])
+  })
+
+  it('removes a managed server', async () => {
+    const layer = managedLayer({
+      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
+      other: { transport: 'stdio', command: 'node' },
     })
-    workbench.syncRegistrations()
-    const off = await workbench.setEnabled('mine', false)
-    expect(off.enabled).toBe(false)
-    expect(servers().mine?.enabled).toBe(false)
-    expect(manager.registered.has('mine')).toBe(false)
-
-    const on = await workbench.setEnabled('mine', true)
-    expect(on.enabled).toBe(true)
-    expect(servers().mine?.enabled).toBeUndefined()
-    expect(manager.registered.has('mine')).toBe(true)
+    const { workbench } = harness({ layers: [layer] })
+    await workbench.remove('clion')
+    expect(Object.keys(recordsOf(layer))).toEqual(['other'])
   })
 
-  it('switches a profile row through the plugin manager', async () => {
-    const layer = clientLayer('mcp-a', 'a', profileRow)
-    const pluginManager = fakePluginManager({
-      apply: (id, enabled) => {
-        if (id === 'mcp-a') layer.entry.options.disabled = !enabled
-      },
-    })
-    const { workbench } = harness({ pluginManager, layers: [layer] })
-    const off = await workbench.setEnabled('a', false)
-    expect(off.enabled).toBe(false)
-    expect(off.entryId).toBe('mcp-a')
-
-    const on = await workbench.setEnabled('a', true)
-    expect(on.enabled).toBe(true)
-    expect(pluginManager.calls).toEqual([
-      { id: 'mcp-a', enabled: false },
-      { id: 'mcp-a', enabled: true },
-    ])
-  })
-
-  it('refuses a switch the plugin manager could not apply', async () => {
-    const pluginManager = fakePluginManager({ application: 'overridden' })
-    const { workbench } = harness({ pluginManager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
-    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('overridden')
-    expect(pluginManager.calls).toEqual([{ id: 'mcp-a', enabled: false }])
-  })
-
-  it('switches a server the profile gives to the MCP manager', async () => {
+  it('enables and disables a managed server', async () => {
     const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
     const { workbench } = harness({ layers: [layer] })
 
@@ -368,23 +274,6 @@ describe('plugin writes', () => {
     const on = await workbench.setEnabled('clion', true)
     expect(on.enabled).toBe(true)
     expect(recordsOf(layer)['clion']).not.toHaveProperty('enabled')
-  })
-
-  it('edits a server the profile gives to the MCP manager', async () => {
-    const layer = managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })
-    const { workbench } = harness({ layers: [layer] })
-    await workbench.save('clion', { toolCallTimeoutMs: 5000 })
-    expect(recordsOf(layer)['clion']).toMatchObject({ url: 'http://127.0.0.1/stream', toolCallTimeoutMs: 5000 })
-  })
-
-  it('removes a server the profile gives to the MCP manager', async () => {
-    const layer = managedLayer({
-      clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' },
-      other: { transport: 'stdio', command: 'node' },
-    })
-    const { workbench } = harness({ layers: [layer] })
-    await workbench.remove('clion')
-    expect(Object.keys(recordsOf(layer))).toEqual(['other'])
   })
 
   it('refuses to rewrite a manager row that keeps a !!js expression', async () => {
@@ -401,39 +290,51 @@ describe('plugin writes', () => {
     expect(recordsOf(layer)['clion']).not.toHaveProperty('enabled')
     expect(recordsOf(layer)['github']).toMatchObject({ env: { TOKEN: { __jsExpr: 'process.env.TOKEN' } } })
   })
+})
 
-  it('drops the cached probe when a profile row is switched', async () => {
-    const layer = clientLayer('mcp-a', 'a', {
-      serverName: 'a',
-      transport: 'stdio',
-      command: 'node',
-      env: { KEY: '${credential:KEY}' },
-    })
-    const pluginManager = fakePluginManager({
-      apply: (id, enabled) => {
-        if (id === 'mcp-a') layer.entry.options.disabled = !enabled
-      },
-    })
-    const { workbench } = harness({ pluginManager, layers: [layer] })
-    const before = await workbench.probe('a')
-    expect(before).toMatchObject({ ok: false, error: { stage: 'credential' } })
-    await workbench.setEnabled('a', false)
-    expect(await workbench.probe('a')).not.toBe(before)
+describe('read-only sources', () => {
+  it('refuses to edit a static profile row', async () => {
+    const { workbench, editor } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow)] })
+    expect(await failureCode(() => workbench.save('a', { toolCallTimeoutMs: 1000 }))).toBe('not-editable')
+    expect(await failureCode(() => workbench.remove('a'))).toBe('not-editable')
+    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('not-editable')
+    expect(editor.edits).toEqual([])
   })
 
-  it('refuses to switch a profile row without a plugin manager', async () => {
-    const { workbench } = harness({ layers: [clientLayer('mcp-a', 'a', profileRow)], pluginService: false })
-    expect(await failureCode(() => workbench.setEnabled('a', false))).toBe('unsupported')
-  })
-
-  it('refuses to switch a server the manager owns', async () => {
+  it('refuses to edit a server another plugin registered', async () => {
     const manager = fakeManager([{ name: 'external', configured: true, status: { state: 'ready' } }])
-    const { workbench } = harness({ manager, layers: [clientLayer('mcp-a', 'a', profileRow)] })
+    const { workbench, editor } = harness({ manager, layers: [managedLayer({})] })
+    expect(await failureCode(() => workbench.save('external', { url: 'https://y/mcp' }))).toBe('not-editable')
     expect(await failureCode(() => workbench.setEnabled('external', false))).toBe('not-editable')
+    expect(editor.edits).toEqual([])
+  })
+
+  it('still probes and calls a read-only server', async () => {
+    const { workbench } = harness({
+      layers: [
+        clientLayer('mcp-a', 'a', {
+          serverName: 'a',
+          transport: 'stdio',
+          command: 'node',
+          env: { K: '${credential:K}' },
+        }),
+      ],
+    })
+    expect(await workbench.probe('a')).toMatchObject({ ok: false, error: { stage: 'credential' } })
   })
 })
 
 describe('restart', () => {
+  it('restarts a managed server through the manager', async () => {
+    const manager = fakeManager()
+    const { workbench } = harness({
+      manager,
+      layers: [managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })],
+    })
+    expect((await workbench.restart('clion')).name).toBe('clion')
+    expect(manager.restarted).toEqual(['clion'])
+  })
+
   it('restarts a manager-governed server', async () => {
     const manager = fakeManager([{ name: 'external', configured: true, status: { state: 'ready' } }])
     const { workbench } = harness({ manager })
@@ -447,75 +348,47 @@ describe('restart', () => {
   })
 
   it('reports a missing manager', async () => {
-    const { workbench } = harness({ managerService: false, layers: [clientLayer('mcp-a', 'a', profileRow)] })
-    expect(await failureCode(() => workbench.restart('a'))).toBe('unsupported')
+    const { workbench } = harness({
+      managerService: false,
+      layers: [managedLayer({ clion: { transport: 'streamable-http', url: 'http://127.0.0.1/stream' } })],
+    })
+    expect(await failureCode(() => workbench.restart('clion'))).toBe('unsupported')
   })
 })
 
 describe('lifecycle', () => {
-  it('registers the enabled servers and releases them on cleanup', () => {
-    const manager = fakeManager()
-    const { workbench } = harness({
-      manager,
-      servers: {
-        on: { transport: 'stdio', command: 'node' },
-        off: { transport: 'stdio', command: 'node', enabled: false },
-      },
-    })
-    const stop = workbench.start()
-    expect([...manager.registered.keys()]).toEqual(['on'])
-    stop()
-    expect(manager.registered.size).toBe(0)
-  })
-
-  it('keeps going when a registration throws', () => {
-    const manager = fakeManager()
-    manager.register = vi.fn(() => {
-      throw new Error('duplicate name')
-    })
-    const { workbench } = harness({ manager, servers: { boom: { transport: 'stdio', command: 'node' } } })
-    expect(() => workbench.syncRegistrations()).not.toThrow()
-  })
-
-  it('releases a registration that throws on dispose', () => {
-    const manager = fakeManager()
-    let calls = 0
-    manager.register = () => () => {
-      calls += 1
-      throw new Error('already gone')
-    }
-    const { workbench } = harness({ manager, servers: { a: { transport: 'stdio', command: 'node' } } })
-    const stop = workbench.start()
-    expect(() => stop()).not.toThrow()
-    expect(calls).toBe(1)
-  })
-
-  it('does nothing without a manager', () => {
-    const { workbench } = harness({ managerService: false, servers: { a: { transport: 'stdio', command: 'node' } } })
-    expect(() => workbench.syncRegistrations()).not.toThrow()
-  })
-
   it('hands every live session back when it stops', () => {
     const connections = fakeConnections()
-    const manager = fakeManager()
-    const { workbench } = harness({
-      manager,
-      connections: connections.pool,
-      servers: { a: { transport: 'stdio', command: 'node' } },
-    })
+    const { workbench } = harness({ connections: connections.pool })
     const stop = workbench.start()
     stop()
     expect(connections.closed).toEqual(['*'])
   })
+
+  it('keeps going when a session will not close', () => {
+    const pool = {
+      size: (): number => 0,
+      has: (): boolean => false,
+      use: async (): Promise<never> => {
+        throw new Error('these tests never open a session')
+      },
+      close: async (): Promise<void> => undefined,
+      closeAll: async (): Promise<void> => {
+        throw new Error('cleanup failed')
+      },
+    } as unknown as ConnectionPool
+    const { workbench } = harness({ connections: pool })
+    const stop = workbench.start()
+    expect(() => stop()).not.toThrow()
+  })
 })
 
 describe('live sessions', () => {
-  it('closes the session of a plugin server it just wrote', async () => {
+  it('closes the session of a managed server it just wrote', async () => {
     const connections = fakeConnections()
     const { workbench } = harness({
       connections: connections.pool,
-      layers: [ownLayer({ a: { transport: 'stdio', command: 'node' } })],
-      servers: { a: { transport: 'stdio', command: 'node' } },
+      layers: [managedLayer({ a: { transport: 'stdio', command: 'node' } })],
     })
     await workbench.save('a', { toolCallTimeoutMs: 9_000 })
     expect(connections.closed).toEqual(['a'])
@@ -523,10 +396,19 @@ describe('live sessions', () => {
 
   it('closes the session of a managed server it just switched', async () => {
     const connections = fakeConnections()
-    const layer = managedLayer({ a: { transport: 'stdio', command: 'node' } })
-    const { workbench } = harness({ connections: connections.pool, layers: [layer] })
+    const { workbench } = harness({
+      connections: connections.pool,
+      layers: [managedLayer({ a: { transport: 'stdio', command: 'node' } })],
+    })
     await workbench.setEnabled('a', false)
     expect(connections.closed).toEqual(['a'])
+  })
+
+  it('closes the session of a server it added', async () => {
+    const connections = fakeConnections()
+    const { workbench } = harness({ connections: connections.pool, layers: [managedLayer({})] })
+    await workbench.add({ name: 'added', spec: { transport: 'stdio', command: 'node' } })
+    expect(connections.closed).toEqual(['added'])
   })
 
   it('closes the session it restarted', async () => {
@@ -535,12 +417,5 @@ describe('live sessions', () => {
     const { workbench } = harness({ connections: connections.pool, manager })
     await workbench.restart('external')
     expect(connections.closed).toEqual(['external'])
-  })
-})
-
-describe('transportOfSpec', () => {
-  it('reports the transport, defaulting to http', () => {
-    expect(transportOfSpec({ transport: 'stdio' })).toBe('stdio')
-    expect(transportOfSpec(undefined)).toBe('streamable-http')
   })
 })

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { MCP_CLIENT_PLUGIN, MCP_MANAGER_PLUGIN, findServer, readInventory, specFromRecord } from '../src/inventory.js'
 import type { DshConfigLayer } from '../src/types/dsh.js'
 import type { ProbeSummary } from '../src/types/index.js'
-import { DEFAULT_CONFIG, type WorkbenchConfig } from '../src/config.js'
 import { entry, fakeEditor, fakeManager } from './helpers/fakes.js'
 
 const layer = (
@@ -21,17 +20,13 @@ const layer = (
   ...(override === undefined ? {} : { override }),
 })
 
-const config = (servers: WorkbenchConfig['servers'] = {}): WorkbenchConfig => ({ ...DEFAULT_CONFIG, servers })
-
 const source = (options: {
   layers?: DshConfigLayer[]
-  servers?: WorkbenchConfig['servers']
   manager?: ReturnType<typeof fakeManager>
   probes?: Record<string, ProbeSummary>
 }) => ({
   configEditor: () => (options.layers === undefined ? undefined : fakeEditor(options.layers)),
   mcpManager: () => options.manager,
-  config: () => config(options.servers),
   probeSummary: (name: string) => options.probes?.[name],
 })
 
@@ -104,7 +99,8 @@ describe('readInventory', () => {
       transport: 'stdio',
       endpoint: 'gh.exe stdio',
       enabled: true,
-      editable: true,
+      editable: false,
+      readOnlyReason: 'profile',
       command: 'gh.exe',
       args: ['stdio'],
       env: { GITHUB_TOKEN: { value: null, secret: true, expression: 'process.env.T' } },
@@ -175,21 +171,19 @@ describe('readInventory', () => {
     expect(readInventory(source({ layers: [other] }))).toEqual([])
   })
 
-  it('reads the servers this bundle stores and their live state', () => {
+  it('shows a profile row as read-only but still keeps what a probe needs', () => {
     const manager = fakeManager([{ name: 'mine', configured: false, status: { state: 'ready' } }])
     const servers = readInventory(
       source({
-        servers: {
-          mine: { transport: 'stdio', command: 'node' },
-          off: { transport: 'stdio', command: 'node', enabled: false },
-        },
+        layers: [layer('mcp-mine', { serverName: 'mine', transport: 'stdio', command: 'node' })],
         manager,
       }),
     )
     expect(servers.map((server) => [server.name, server.source, server.view.live, server.view.enabled])).toEqual([
-      ['mine', 'plugin', 'ready', true],
-      ['off', 'plugin', undefined, false],
+      ['mine', 'profile', 'ready', true],
     ])
+    expect(servers[0]?.view).toMatchObject({ editable: false, readOnlyReason: 'profile' })
+    expect(servers[0]?.spec).toEqual({ transport: 'stdio', command: 'node' })
   })
 
   it('reads a manager-governed server as read-only', () => {
@@ -214,12 +208,11 @@ describe('readInventory', () => {
     expect(servers[1]?.view).toMatchObject({ source: 'manager', enabled: false, live: 'disabled', editable: false })
   })
 
-  it('keeps the profile and plugin rows ahead of the manager', () => {
+  it('keeps the profile row ahead of the manager', () => {
     const manager = fakeManager([{ name: 'dup', configured: true, status: { state: 'ready' } }])
     const servers = readInventory(
       source({
         layers: [layer('mcp-dup', { serverName: 'dup', transport: 'stdio', command: 'node' })],
-        servers: { dup: { transport: 'stdio', command: 'node' } },
         manager,
       }),
     )

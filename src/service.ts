@@ -1,25 +1,11 @@
-/** Every operation, implemented once; the settings page and the model tool both call this. */
+/** Every operation, implemented once; the sidebar page and the model tool both call this. */
 import { ConnectionPool } from './connection.js'
 import { applyPatch, expressionPath, validatePatched } from './edit.js'
 import { WorkbenchFailure } from './failures.js'
-import { readInventory, type InventorySource, type ResolvedServer } from './inventory.js'
+import { MCP_MANAGER_PLUGIN, readInventory, type InventorySource, type ResolvedServer } from './inventory.js'
 import { callServerTool, probeServer, transportFor } from './probe.js'
-import {
-  SERVER_NAME_PATTERN,
-  normalizeServerSpec,
-  validateServerSpec,
-  type McpServerSpec,
-  type WorkbenchConfig,
-} from './config.js'
-import { PLUGIN_NAME } from './version.js'
-import type {
-  DshConfigEditor,
-  DshCredentialsFace,
-  DshHostContext,
-  DshLoaderEntry,
-  DshMcpManager,
-  DshPluginManagerFace,
-} from './types/dsh.js'
+import { SERVER_NAME_PATTERN, normalizeServerSpec, validateServerSpec, type WorkbenchConfig } from './config.js'
+import type { DshConfigEditor, DshCredentialsFace, DshHostContext, DshLoaderEntry, DshMcpManager } from './types/dsh.js'
 import type { CallResult, ProbeResult, ProbeSummary, ServerPatch, ServerView } from './types/index.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -28,8 +14,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export interface WorkbenchOptions {
   ctx: DshHostContext
   config(): WorkbenchConfig
-  /** Called after the stored server map changed, so the caller's view of the config stays current. */
-  applyServers?(servers: Record<string, McpServerSpec>): void
   /** Replaced in tests; the plugin keeps one pool for its whole lifetime. */
   connections?: ConnectionPool
 }
@@ -45,11 +29,16 @@ export interface AddRequest {
   spec: unknown
 }
 
-/** The three places that mount servers, behind the four operations the surfaces need. */
+/**
+ * The MCP servers a profile mounts, behind the operations the two surfaces need.
+ *
+ * The page is a window onto `@deepseek-ai/dsh-mcp-manager`: the servers it lists as `managed` live in
+ * that row's `servers` map, which is the only place this plugin writes. Static `dsh-mcp-client` rows
+ * and servers other plugins registered are shown read-only, but can still be probed and called.
+ */
 export class Workbench {
   private readonly probes = new Map<string, { result: ProbeResult; expiresAt: number }>()
   private readonly inflight = new Map<string, Promise<ProbeResult>>()
-  private readonly registered = new Map<string, () => void>()
   private readonly connections: ConnectionPool
 
   constructor(private readonly options: WorkbenchOptions) {
@@ -81,7 +70,6 @@ export class Workbench {
     return {
       configEditor: () => this.editor(),
       mcpManager: () => this.manager(),
-      config: () => this.options.config(),
       probeSummary: (name) => this.cachedSummary(name),
     }
   }
@@ -104,6 +92,20 @@ export class Workbench {
     const server = readInventory(this.source()).find((candidate) => candidate.name === name)
     if (server === undefined) throw new WorkbenchFailure('unknown-server', `no MCP server named "${name}"`)
     return server
+  }
+
+  /** Refuse a write on a server this page only shows. */
+  private readOnly(server: ResolvedServer, verb: string): WorkbenchFailure {
+    if (server.source === 'profile') {
+      return new WorkbenchFailure(
+        'not-editable',
+        `server "${server.name}" is a static row of the profile, so it is read-only here; move it into the ${MCP_MANAGER_PLUGIN} row to ${verb} it`,
+      )
+    }
+    return new WorkbenchFailure(
+      'not-editable',
+      `server "${server.name}" is registered by another plugin and cannot be ${verb}d here`,
+    )
   }
 
   // -- reads -------------------------------------------------------------------
@@ -193,75 +195,15 @@ export class Workbench {
 
   async save(name: string, patch: ServerPatch): Promise<ServerDetail> {
     const server = this.require(name)
-    if (server.source === 'profile') return this.saveProfile(server, patch)
-    if (server.source === 'managed') return this.saveManaged(server, patch)
-    if (server.source === 'plugin') return this.savePlugin(server, patch)
-    throw new WorkbenchFailure('not-editable', `server "${name}" is owned by the MCP manager and is read-only here`)
-  }
-
-  private async saveManaged(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
+    if (server.source !== 'managed') throw this.readOnly(server, 'change')
     const base = server.raw ?? ((server.spec ?? {}) as unknown as Record<string, unknown>)
     const next = applyPatch({ ...base }, patch)
     const problems = validatePatched(next)
     if (problems.length > 0) {
       throw new WorkbenchFailure('invalid-config', problems.join('; '), problems)
     }
-    await this.writeManaged(server, (servers) => ({ ...servers, [server.name]: next }))
-    return this.detail(server.name)
-  }
-
-  /** Write one server of the profile's manager row, leaving the rest of that map alone. */
-  private async writeManaged(
-    server: ResolvedServer,
-    change: (servers: Record<string, unknown>) => Record<string, unknown>,
-  ): Promise<void> {
-    const entry = server.entry
-    if (entry === undefined) throw new WorkbenchFailure('not-editable', `server "${server.name}" has no manager row`)
-    const editor = this.requireEditor()
-    await editor.edit(entry, (current) => {
-      const servers = isRecord(current['servers']) ? current['servers'] : {}
-      const expression = expressionPath(servers, 'servers')
-      if (expression !== undefined) {
-        throw new WorkbenchFailure(
-          'invalid-config',
-          `the manager row keeps a "!!js" expression at ${expression}, and that row's schema only accepts a string there; store the value as a literal or as \${credential:NAME} and this server can be changed here`,
-        )
-      }
-      return { ...current, servers: change(servers) }
-    })
-    // The fleet is rebuilt from the new map, so a cached probe and the live session no longer describe it.
-    this.probes.delete(server.name)
-    await this.connections.close(server.name)
-  }
-
-  private async saveProfile(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
-    const entry = server.entry
-    if (entry === undefined) throw new WorkbenchFailure('not-editable', `server "${server.name}" has no profile row`)
-    const next = applyPatch({ ...(server.raw ?? {}) }, patch)
-    const problems = validatePatched(next)
-    if (problems.length > 0) {
-      throw new WorkbenchFailure('invalid-config', problems.join('; '), problems)
-    }
-    const editor = this.requireEditor()
-    await editor.edit(entry, () => next)
-    await this.connections.close(server.name)
-    return this.detail(server.name)
-  }
-
-  private async savePlugin(server: ResolvedServer, patch: ServerPatch): Promise<ServerDetail> {
-    const merged = applyPatch({ ...((server.spec ?? {}) as Record<string, unknown>) }, patch)
-    const spec = normalizeServerSpec(merged)
-    if (spec === undefined) {
-      const problems = validateServerSpec(merged)
-      throw new WorkbenchFailure(
-        'invalid-config',
-        problems.join('; ') || 'the server configuration is invalid',
-        problems,
-      )
-    }
-    await this.writeServers({ ...this.options.config().servers, [server.name]: spec })
-    await this.connections.close(server.name)
-    return this.detail(server.name)
+    await this.writeManagerRow(name, (servers) => ({ ...servers, [name]: next }))
+    return this.detail(name)
   }
 
   async add(request: AddRequest): Promise<ServerView> {
@@ -284,99 +226,31 @@ export class Workbench {
         problems,
       )
     }
-    await this.writeServers({ ...this.options.config().servers, [name]: spec })
-    return this.require(name).view
+    await this.writeManagerRow(name, (servers) => ({ ...servers, [name]: spec }))
+    return this.detail(name).server
   }
 
   async remove(name: string): Promise<void> {
     const server = this.require(name)
-    if (server.source === 'managed') {
-      await this.writeManaged(server, (servers) => {
-        const next = { ...servers }
-        delete next[server.name]
-        return next
-      })
-      return
-    }
-    if (server.source !== 'plugin') {
-      throw new WorkbenchFailure(
-        'not-editable',
-        `server "${name}" belongs to ${server.source === 'profile' ? 'the profile' : 'the MCP manager'} and cannot be removed here`,
-      )
-    }
-    const servers = { ...this.options.config().servers }
-    delete servers[name]
-    await this.writeServers(servers)
-    await this.connections.close(name)
+    if (server.source !== 'managed') throw this.readOnly(server, 'remove')
+    await this.writeManagerRow(name, (servers) => {
+      const next = { ...servers }
+      delete next[name]
+      return next
+    })
   }
 
   async setEnabled(name: string, enabled: boolean): Promise<ServerView> {
     const server = this.require(name)
-    if (server.source === 'profile') return this.setProfileEnabled(server, enabled)
-    if (server.source === 'managed') return this.setManagedEnabled(server, enabled)
-    if (server.source !== 'plugin') {
-      throw new WorkbenchFailure(
-        'not-editable',
-        `server "${name}" belongs to the MCP manager and cannot be switched here`,
-      )
-    }
-    const current = this.options.config().servers[name]
-    if (current === undefined) throw new WorkbenchFailure('unknown-server', `no server named "${name}" is stored here`)
-    const next: McpServerSpec = { ...current }
-    if (enabled) delete next.enabled
-    else next.enabled = false
-    await this.writeServers({ ...this.options.config().servers, [name]: next })
-    await this.connections.close(name)
-    return this.require(name).view
-  }
-
-  /** Switch one server of the profile's manager row: `enabled` is an ordinary field of that map. */
-  private async setManagedEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
-    await this.writeManaged(server, (servers) => {
-      const stored = servers[server.name]
+    if (server.source !== 'managed') throw this.readOnly(server, 'switch')
+    await this.writeManagerRow(name, (servers) => {
+      const stored = servers[name]
       const next: Record<string, unknown> = isRecord(stored) ? { ...stored } : {}
       if (enabled) delete next['enabled']
       else next['enabled'] = false
-      return { ...servers, [server.name]: next }
+      return { ...servers, [name]: next }
     })
-    return this.require(server.name).view
-  }
-
-  /**
-   * Switch a profile row through the plugin manager, which owns `disabled`.
-   * The row's own config stays where it is; only the entry's enablement changes. A profile patch
-   * cannot override a row it inserts in the same layer, so the manager reports that row as
-   * `overridden`, and the switch is refused instead of being reported as done.
-   */
-  private async setProfileEnabled(server: ResolvedServer, enabled: boolean): Promise<ServerView> {
-    const entryId = server.view.entryId
-    if (entryId === undefined) {
-      throw new WorkbenchFailure('not-editable', `server "${server.name}" has no profile entry to switch`)
-    }
-    const manager = this.options.ctx.get<DshPluginManagerFace>('pluginManager')
-    if (manager === undefined) {
-      throw new WorkbenchFailure(
-        'unsupported',
-        'the plugin manager service is not available in this profile, so a profile server cannot be switched here',
-      )
-    }
-    const outcome = applicationOf(await manager.setPluginEnabled(entryId, enabled))
-    if (outcome !== 'overridden' && (await this.awaitEnabled(server.name, enabled))) {
-      // Switching a server changes the tool set, so the cached probe and the session no longer describe it.
-      this.probes.delete(server.name)
-      await this.connections.close(server.name)
-      return this.require(server.name).view
-    }
-    throw new WorkbenchFailure('overridden', switchRefusal(entryId, outcome, enabled))
-  }
-
-  /** Wait for a switch to reach the composition; a live reload lands a moment after the write. */
-  private async awaitEnabled(name: string, enabled: boolean): Promise<boolean> {
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 300))
-      if (this.list().find((view) => view.name === name)?.enabled === enabled) return true
-    }
-    return false
+    return this.detail(name).server
   }
 
   async restart(name: string): Promise<ServerView> {
@@ -384,7 +258,7 @@ export class Workbench {
     if (server.source === 'profile') {
       throw new WorkbenchFailure(
         'unsupported',
-        `server "${name}" is mounted by the profile; edit it and the row reloads`,
+        `server "${name}" is a static row of the profile; edit it and the row reloads`,
       )
     }
     const manager = this.manager()
@@ -394,38 +268,49 @@ export class Workbench {
     return this.detail(name).server
   }
 
-  // -- persistence -------------------------------------------------------------
+  // -- the manager row ---------------------------------------------------------
 
-  /** Write this bundle's own server map into its config row. */
-  private async writeServers(servers: Record<string, McpServerSpec>): Promise<void> {
+  /** The profile row this plugin edits: the one whose `servers` map the manager reads. */
+  private managerEntry(): DshLoaderEntry {
     const editor = this.requireEditor()
-    const entry = this.ownEntry(editor)
-    await editor.edit(entry, (current) => ({ ...current, servers }))
-    this.options.applyServers?.(servers)
-    this.releaseAll()
-    this.syncRegistrations()
-  }
-
-  /** The config row this bundle owns. */
-  private ownEntry(editor: DshConfigEditor): DshLoaderEntry {
-    const entries = editor.entries()
-    const own = entries.find((entry) => entry.options.name === PLUGIN_NAME)
-    if (own === undefined) {
+    const layer = editor.configuration().find((candidate) => candidate.entry.options.name === MCP_MANAGER_PLUGIN)
+    if (layer === undefined) {
       throw new WorkbenchFailure(
         'not-editable',
-        `the profile has no configurable row for ${PLUGIN_NAME}, so servers cannot be stored`,
+        `the profile has no ${MCP_MANAGER_PLUGIN} row, so servers cannot be stored here`,
       )
     }
-    return own
+    return layer.entry
+  }
+
+  /** Change one entry of that row's `servers` map, leaving the rest of it alone. */
+  private async writeManagerRow(
+    name: string,
+    change: (servers: Record<string, unknown>) => Record<string, unknown>,
+  ): Promise<void> {
+    const entry = this.managerEntry()
+    const editor = this.requireEditor()
+    await editor.edit(entry, (current) => {
+      const servers = isRecord(current['servers']) ? current['servers'] : {}
+      const expression = expressionPath(servers, 'servers')
+      if (expression !== undefined) {
+        throw new WorkbenchFailure(
+          'invalid-config',
+          `the manager row keeps a "!!js" expression at ${expression}, and that row's schema only accepts a string there; store the value as a literal or as \${credential:NAME} and this server can be changed here`,
+        )
+      }
+      return { ...current, servers: change(servers) }
+    })
+    // The fleet is rebuilt from the new map, so a cached probe and the live session no longer describe it.
+    this.probes.delete(name)
+    await this.connections.close(name)
   }
 
   // -- lifecycle ---------------------------------------------------------------
 
-  /** Register every enabled server this bundle owns; returns the cleanup. */
+  /** Start serving; returns the cleanup the plugin calls when it unmounts. */
   start(): () => void {
-    this.syncRegistrations()
     return () => {
-      this.releaseAll()
       this.inflight.clear()
       this.probes.clear()
       // Sessions outlive a request, so the plugin has to hand them back when it stops.
@@ -434,65 +319,4 @@ export class Workbench {
       })
     }
   }
-
-  /** Drop every live registration, so the next sync starts from the stored map alone. */
-  private releaseAll(): void {
-    for (const [name, dispose] of [...this.registered]) {
-      try {
-        dispose()
-      } catch (error) {
-        this.options.ctx.logger.warn(`mcp-workbench: ${name} was not released:`, error)
-      }
-    }
-    this.registered.clear()
-  }
-
-  /** Make the live fleet match the stored server map. */
-  syncRegistrations(): void {
-    const manager = this.manager()
-    if (manager === undefined) return
-    const servers = this.options.config().servers
-    for (const [name, spec] of Object.entries(servers)) {
-      if (spec.enabled === false || this.registered.has(name)) continue
-      try {
-        const disposer: unknown = manager.register(name, spec)
-        this.registered.set(name, typeof disposer === 'function' ? (disposer as () => void) : () => undefined)
-      } catch (error) {
-        this.options.ctx.logger.warn(`mcp-workbench: ${name} was not registered:`, error)
-      }
-    }
-    for (const [name, dispose] of [...this.registered]) {
-      const spec = servers[name]
-      if (spec !== undefined && spec.enabled !== false) continue
-      try {
-        dispose()
-      } catch (error) {
-        this.options.ctx.logger.warn(`mcp-workbench: ${name} was not released:`, error)
-      }
-      this.registered.delete(name)
-    }
-  }
-}
-
-/** Read the transport fields of a stored spec for display. */
-export const transportOfSpec = (spec: McpServerSpec | undefined): ServerView['transport'] =>
-  spec?.transport ?? 'streamable-http'
-
-/** Read the runtime outcome out of a plugin-manager change result. */
-function applicationOf(result: unknown): string | undefined {
-  if (typeof result !== 'object' || result === null) return undefined
-  const application = (result as { application?: unknown }).application
-  return typeof application === 'string' ? application : undefined
-}
-
-/** Explain a switch that the plugin manager could not apply. */
-function switchRefusal(entryId: string, outcome: string | undefined, enabled: boolean): string {
-  const wanted = enabled ? 'enabled' : 'disabled'
-  if (outcome === 'restart-required') {
-    return `"${entryId}" is saved as ${wanted}, but this profile applies that change on restart`
-  }
-  if (outcome === 'overridden') {
-    return `"${entryId}" is inserted by this profile's patch, and a patch cannot override a row it inserts, so the server cannot be switched from here; change "disabled" on that row in the profile patch instead`
-  }
-  return `"${entryId}" did not become ${wanted}; this profile's patch inserts the row, so the plugin manager cannot override it from here`
 }

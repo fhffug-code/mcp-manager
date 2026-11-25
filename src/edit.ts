@@ -83,6 +83,8 @@ export function applyPatch(raw: Record<string, unknown>, patch: ServerPatch): Re
   setOrDelete(next, 'transport', transport)
   if (transport === 'stdio') {
     delete next['url']
+    // A stdio server never sends headers, so the other transport's map would be dead weight.
+    delete next['headers']
     setOrDelete(next, 'command', patch.command)
     setOrDelete(next, 'args', patch.args)
     setOrDelete(next, 'cwd', patch.cwd)
@@ -93,7 +95,7 @@ export function applyPatch(raw: Record<string, unknown>, patch: ServerPatch): Re
     delete next['env']
     setOrDelete(next, 'url', patch.url)
   }
-  if (patch.headers !== undefined) {
+  if (patch.headers !== undefined && transport !== 'stdio') {
     const merged = mergeFields(next['headers'], patch.headers)
     if (merged === undefined) delete next['headers']
     else next['headers'] = merged

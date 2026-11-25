@@ -50,14 +50,6 @@ export interface DshMcpManager {
 }
 
 /**
- * The profile manager. `setPluginEnabled` persists an entry's `disabled` in the profile patch and
- * applies it, which is the only supported way to switch a row off: the config editor cannot touch it.
- */
-export interface DshPluginManagerFace {
-  setPluginEnabled(id: string, enabled: boolean): Promise<unknown>
-}
-
-/**
  * The credential store a server's `${credential:NAME}` reference resolves against.
  *
  * The manager resolves those references itself before it connects; a probe this plugin opens has to

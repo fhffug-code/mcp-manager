@@ -129,24 +129,16 @@ describe('normalizeConfig', () => {
     expect(normalizeConfig('nope')).toEqual({ config: { ...DEFAULT_CONFIG }, warnings: ['config must be an object'] })
   })
 
-  it('keeps the valid servers and names the dropped ones', () => {
+  it('warns that a server map in the bundle config is ignored', () => {
     const { config, warnings } = normalizeConfig({
       servers: {
         good: { transport: 'stdio', command: 'node' },
-        'bad name': { transport: 'stdio', command: 'node' },
-        broken: { transport: 'stdio' },
-        http: { transport: 'streamable-http', url: 'https://host/mcp' },
       },
     })
-    expect(Object.keys(config.servers)).toEqual(['good', 'http'])
+    expect(config).toEqual({ ...DEFAULT_CONFIG })
     expect(warnings).toEqual([
-      'server "bad name" is not a valid name',
-      'server "broken" is invalid: command is required',
+      "config.servers is ignored; servers live in the profile's @deepseek-ai/dsh-mcp-manager row",
     ])
-  })
-
-  it('reports servers that are not an object', () => {
-    expect(normalizeConfig({ servers: [] }).warnings).toEqual(['config.servers must be an object'])
   })
 
   it('keeps the budgets it can read and replaces the rest', () => {

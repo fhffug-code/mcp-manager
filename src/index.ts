@@ -9,20 +9,14 @@ export { PLUGIN_NAME, PLUGIN_VERSION } from './version.js'
 
 /**
  * Mount the workbench.
- * The config is read once per apply and refreshed in place when this plugin stores a server,
- * so a change does not depend on the row reloading.
+ * The config is read once per apply; the servers themselves live in the profile's manager row, so
+ * nothing this plugin writes has to be reflected back into it.
  */
 export function apply(ctx: DshHostContext, rawConfig?: unknown): void {
   const normalized = normalizeConfig(rawConfig)
   for (const warning of normalized.warnings) ctx.logger.warn(`mcp-workbench: ${warning}`)
-  let config: WorkbenchConfig = normalized.config
-  const workbench = new Workbench({
-    ctx,
-    config: () => config,
-    applyServers: (servers) => {
-      config = { ...config, servers }
-    },
-  })
+  const config: WorkbenchConfig = normalized.config
+  const workbench = new Workbench({ ctx, config: () => config })
   ctx.effect(() => workbench.start(), 'mcp-workbench/registrations')
   ctx.inject(['connection'], (scope) => {
     const connection = scope.get<DshConnection>('connection')
