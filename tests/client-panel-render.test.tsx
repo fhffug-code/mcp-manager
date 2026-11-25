@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpPanel } from '../src/client/McpPanel.js'
+import { DEFAULT_LAYOUT, LAYOUT_KEY } from '../src/client/layout.js'
 import { STYLES } from '../src/client/styles.js'
 import type { ServerView } from '../src/types/index.js'
 
@@ -54,6 +55,7 @@ const listed = (server: ServerView): Answer => ({ status: 200, body: { ok: true,
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  localStorage.clear()
 })
 
 describe('the MCP page switch', () => {
@@ -134,10 +136,53 @@ describe('the MCP page layout', () => {
     }
   })
 
-  it('splits 3/7 and separates the bands with a hairline', () => {
-    expect(STYLES).toContain('grid-template-columns: minmax(0, 3fr) minmax(0, 7fr)')
-    expect(STYLES).toContain('grid-template-rows: minmax(0, 3fr) minmax(0, 7fr)')
+  it('separates the bands with a hairline and a handle on each split', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
     expect(STYLES).toContain('.mcpw-divide-right { border-right: 1px solid')
+    const separators = screen.getAllByRole('separator')
+    expect(separators.map((node) => node.getAttribute('aria-orientation'))).toEqual([
+      'vertical',
+      'vertical',
+      'horizontal',
+    ])
+    for (const id of ['sep-servers', 'sep-tools', 'sep-detail']) expect(screen.getByTestId(id)).toBeTruthy()
+  })
+
+  it('starts at 2/8 and remembers a share it was dragged to', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    expect(DEFAULT_LAYOUT).toEqual({ servers: 0.2, tools: 0.3, detail: 0.3 })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    fireEvent.keyDown(screen.getByTestId('sep-servers'), { key: 'ArrowRight' })
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { servers: number }
+      expect(stored.servers).toBeGreaterThan(0.2)
+    })
+
+    fireEvent.keyDown(screen.getByTestId('sep-detail'), { key: 'ArrowDown' })
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { detail: number }
+      expect(stored.detail).toBeGreaterThan(0.3)
+    })
+
+    fireEvent.doubleClick(screen.getByTestId('sep-servers'))
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { servers: number }
+      expect(stored.servers).toBe(0.2)
+    })
   })
 })
 
@@ -158,6 +203,88 @@ describe('a server the page cannot change', () => {
     fireEvent.click(screen.getByText('clion'))
     const test = (await screen.findByRole('button', { name: 'testConnection' })) as HTMLButtonElement
     expect(test.disabled).toBe(false)
+  })
+})
+
+describe('the arguments of a tool', () => {
+  const schema = (name: string): unknown => ({
+    type: 'object',
+    properties: { [name]: { type: 'string' } },
+    required: [name],
+  })
+
+  const probed = (): Answer => ({
+    status: 200,
+    body: {
+      ok: true,
+      value: {
+        server: view(),
+        probe: {
+          ok: true,
+          toolCount: 2,
+          truncated: false,
+          durationMs: 5,
+          probedAt: '2026-11-25T00:00:00.000Z',
+          tools: [
+            { name: 'alpha', description: 'The first tool.', inputSchema: schema('message') },
+            { name: 'beta', description: 'The second tool.', inputSchema: schema('path') },
+          ],
+        },
+      },
+    },
+  })
+
+  /** Render the page and pick the server, so its tools are listed. */
+  async function openTools(): Promise<void> {
+    render(<McpPanel t={t} />)
+    fireEvent.click(await screen.findByText('clion'))
+    await screen.findByText('alpha')
+  }
+
+  /** The row of that tool in the list, not the heading the detail band shows once it is picked. */
+  const toolRow = (name: string): HTMLElement => within(screen.getByTestId('split-tools')).getByText(name)
+
+  it('keeps what was typed when another tool is picked in between', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    const box = screen.getByLabelText('arguments') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '{"message":"edited"}' } })
+
+    fireEvent.click(toolRow('beta'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toContain('"path"')
+
+    fireEvent.click(toolRow('alpha'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe('{"message":"edited"}')
+  })
+
+  it('keeps what was typed when the same tool is picked again', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '{"message":"kept"}' } })
+    fireEvent.click(toolRow('alpha'))
+
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe('{"message":"kept"}')
+  })
+
+  it('puts the example back when it is reset, and remembers that too', async () => {
+    stubFetch((call) => (call.action === 'list' ? listed(view()) : probed()))
+    await openTools()
+
+    fireEvent.click(toolRow('alpha'))
+    const prefilled = (screen.getByLabelText('arguments') as HTMLTextAreaElement).value
+    expect(prefilled).toContain('"message"')
+
+    fireEvent.change(screen.getByLabelText('arguments'), { target: { value: '{"message":"changed"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'reset' }))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
+
+    fireEvent.click(toolRow('beta'))
+    fireEvent.click(toolRow('alpha'))
+    expect((screen.getByLabelText('arguments') as HTMLTextAreaElement).value).toBe(prefilled)
   })
 })
 

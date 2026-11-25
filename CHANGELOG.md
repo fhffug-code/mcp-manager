@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - Adding a server to that map from the page, and deleting one from the form footer after a confirmation, both through `configEditor.edit()` with the rest of the row preserved.
 - Switching a server between `streamable-http` and `stdio` in its form, in edit mode as well as when adding: both halves keep their own draft while the form is open, and saving writes the half the selector points at and drops the other.
 - A test call that prefills its arguments from the tool's input schema and shows the answer as JSON, as a foldable tree, or as the raw request and response.
+- **Reset** beside **Call**, which puts the prefilled arguments back.
+- Each tool of each server keeps the arguments typed for it, so leaving a tool and coming back — or clicking the same row again — keeps the text instead of overwriting it.
+- The page's bands can be resized: drag one of the three separators, or focus it and use the arrow keys; a double click puts that band back where it started, and the shares are remembered in `localStorage`.
 - Search boxes over the server list and the tool list, and tool rows that keep their description to two lines.
 - Read-only rows that still probe and still take test calls, with the reason they cannot be edited shown on the row.
 - Probing a server over its own MCP session: tool names, descriptions, input schemas, timings, a name and schema budget, and a staged failure report. The session is opened on first use, reused by later probes and test calls, and closed when the server is written, restarted, or the plugin stops.
@@ -22,7 +25,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
-- The page is one nested set of bands rather than three side-by-side cards: a third for the servers, then a third for the tools and two thirds for the selected tool, separated by hairlines; the server search stays in the server band and the tool search sits beside the test button.
+- The page is one nested set of bands rather than three side-by-side cards: the servers take a fifth, then the tools three tenths and the selected tool the last three tenths, separated by hairlines that double as drag handles; the server search stays in the server band and the tool search sits beside the test button.
+- The band called **Try a call** is now **Call**, in both languages.
 - The MCP page moved out of Settings → Plugins into its own sidebar entry; the settings tab is gone, and the bundle now injects the sidebar and layout client packages instead of the settings page.
 - The default `maxToolSchemas` is 200 rather than 64, so a server with a large toolset still reports every input schema.
 - The repository is organised around `main` and `release/<minor>`, with every contribution landing on `main` through a pull request and a merge commit; there is no `develop` branch.
