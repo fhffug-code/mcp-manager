@@ -16,14 +16,8 @@ export interface PanelProps {
   t: Translate
 }
 
-const sourceLabel = (view: ServerView): string =>
-  view.source === 'profile'
-    ? 'profile'
-    : view.source === 'managed'
-      ? 'managed'
-      : view.source === 'plugin'
-        ? 'plugin'
-        : 'manager'
+/** Where a row comes from, in the one word the row shows. */
+const sourceLabel = (view: ServerView): string => view.source
 
 const matches = (text: string, query: string): boolean =>
   query.trim() === '' || text.toLowerCase().includes(query.trim().toLowerCase())
@@ -216,6 +210,8 @@ export function McpPanel({ t }: PanelProps) {
   const visibleServers = servers.filter((view) => matches(`${view.name} ${view.source} ${view.endpoint}`, serverQuery))
   const tools = probe?.tools ?? []
   const visibleTools = tools.filter((item) => matches(`${item.name} ${item.description ?? ''}`, toolQuery))
+  // The dialog keeps its own draft, so it is remounted per target: a draft never leaks between servers.
+  const editorTarget = editor?.view
 
   return (
     <div
@@ -475,8 +471,9 @@ export function McpPanel({ t }: PanelProps) {
 
       {editor === undefined ? null : (
         <ServerEditor
+          key={editorTarget === undefined ? 'new' : editorTarget.name}
           t={t}
-          {...(editor.view === undefined ? {} : { view: editor.view })}
+          {...(editorTarget === undefined ? {} : { view: editorTarget })}
           onCancel={() => setEditor(undefined)}
           onAdd={async (name, spec) => {
             await api.add(name, spec)
@@ -484,12 +481,28 @@ export function McpPanel({ t }: PanelProps) {
             await refresh()
           }}
           onSave={async (patch) => {
-            if (editor.view === undefined) return
-            await api.save(editor.view.name, patch)
+            if (editorTarget === undefined) return
+            await api.save(editorTarget.name, patch)
             setEditor(undefined)
             await refresh()
-            if (selected === editor.view.name) await api.detail(editor.view.name)
+            if (selected === editorTarget.name) {
+              const next = await api.detail(editorTarget.name)
+              setProbe(next.probe)
+            }
           }}
+          {...(editorTarget !== undefined && editorTarget.editable
+            ? {
+                onDelete: async () => {
+                  await api.remove(editorTarget.name)
+                  setEditor(undefined)
+                  setSelected(undefined)
+                  setProbe(undefined)
+                  setTool(undefined)
+                  setResult(undefined)
+                  await refresh()
+                },
+              }
+            : {})}
         />
       )}
     </div>

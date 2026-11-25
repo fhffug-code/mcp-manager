@@ -9,18 +9,18 @@ Node 22. It is a private bundle installed into a profile, not a package publishe
 one entry in the sidebar — **MCP**, after **Plugins** and the marketplace — and the page that entry
 opens: servers on the left, tools in the middle, one tool's detail and test call on the right. The same
 operations are exposed to the model through the `mcp_workbench` tool. Both surfaces call one service,
-and one same-origin route (`POST /api/mcp-workbench`) carries the browser traffic. The four server
-sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows of the profile patch), `managed` (the
-`servers` map of a profile row whose name is `@deepseek-ai/dsh-mcp-manager`), `plugin` (the servers this
-bundle owns in its own config row) and `manager` (whatever else registered on `mcpManager`, read-only).
+and one same-origin route (`POST /api/mcp-workbench`) carries the browser traffic. The three server
+sources are `profile` (static `@deepseek-ai/dsh-mcp-client` rows of the profile patch, read-only here),
+`managed` (the `servers` map of a profile row whose name is `@deepseek-ai/dsh-mcp-manager`, the only
+place this plugin writes) and `manager` (whatever else registered on `mcpManager`, read-only).
 
 **中文。** `@local/dsh-mcp-workbench` 是一个用 TypeScript 编写、运行在 Node 22 上的 DeepSeek Harness
 插件。它是装进 profile 的私有 bundle，不发布到任何 registry。它在左侧栏占一个入口「MCP」（排在【插件】
 与插件市场之后），并拥有它打开的页面：左边服务器、中间工具、右边单个工具的说明与试调用。同样的操作也
 通过 `mcp_workbench` 工具暴露给模型。两个界面共用同一个 service，浏览器只走一条同源路由
-`POST /api/mcp-workbench`。四个来源分别是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client`
-静态行）、`managed`（profile 里名字是 `@deepseek-ai/dsh-mcp-manager` 的那一行的 `servers` 映射）、
-`plugin`（本 bundle 自己配置行里的服务器）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
+`POST /api/mcp-workbench`。三个来源分别是 `profile`（profile 补丁里的 `@deepseek-ai/dsh-mcp-client`
+静态行，这里只读）、`managed`（profile 里名字是 `@deepseek-ai/dsh-mcp-manager` 的那一行的 `servers`
+映射，也是本插件唯一写入的地方）和 `manager`（其它插件注册到 `mcpManager` 的，只读）。
 
 ## 2. How to run commands on this machine / 这台机器怎么跑命令
 
@@ -151,6 +151,9 @@ release 线也带上这个修复。
   are hand-written in `src/types/dsh.ts`; extend that file instead of importing a dsh package.
 - **Never write the profile config by hand.** Read with `ctx.configEditor.entries()` /
   `configuration()`, write with `edit()`. Keep `{ __jsExpr }` values intact.
+- **Write only on the manager row.** Every mutation — add, save, switch, remove — lands in the
+  `servers` map of the profile row named `@deepseek-ai/dsh-mcp-manager`, through `writeManagerRow()`.
+  This plugin owns no server set of its own, and it never touches a static `mcp-client` row.
 - **No secret in a browser payload.** `src/edit.ts` masks a value whose key looks like a secret; the
   client gets a presence marker. An omitted field keeps its value, `null` deletes it.
 - **One operation, one method.** A capability is a method on `Workbench`, then a route action, then a
@@ -175,6 +178,9 @@ release 线也带上这个修复。
   接口时扩这个文件，而不是 import dsh 包。
 - **绝不手写 profile 配置**：读用 `ctx.configEditor.entries()` / `configuration()`，写用 `edit()`；
   `{ __jsExpr }` 值必须原样回写。
+- **只写 manager 行**：增、改、启停、删都只落在名字是 `@deepseek-ai/dsh-mcp-manager` 的那一行的
+  `servers` 映射里，一律经 `writeManagerRow()`。本插件不拥有自己的服务器集合，也从不碰静态
+  `mcp-client` 行。
 - **浏览器侧不出现秘密**：`src/edit.ts` 会把 key 像秘密的值遮起来，客户端只拿到存在标记。字段省略表示
   保持原值，`null` 表示删除。
 - **一个操作一个方法**：能力先落在 `Workbench` 的方法，然后是路由动作、工具参数行、页面控件；路由、工具和
@@ -199,10 +205,9 @@ release 线也带上这个修复。
   is empty and the raw config arrives in `inherited`. `rawConfigOf()` handles it; a write to such a row
   appends a new top-level override row, and removing the last change removes that row again.
 - `configEditor.edit()` can change a row's `config` only: it cannot insert or delete a row, and it cannot
-  touch `disabled`. `pluginManager.setPluginEnabled()` owns `disabled`, but it cannot override a row the
-  same patch layer inserts, so it answers `overridden` for the five `mcp-*` rows: read that answer and
-  report it, never claim a switch the composition did not take. Switching a profile row is `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`,
-  where `entryId` is the row's `entry.options.id`.
+  touch `disabled`. A static `mcp-client` row is therefore read-only here: the plugin manager cannot
+  override a row its own patch layer inserts (it answers `overridden`), so this plugin does not offer a
+  switch for those rows at all — it shows the reason instead. Probe and call still work on them.
 - A `managed` server lives in the `servers` map of a profile row named
   `@deepseek-ai/dsh-mcp-manager`; there `enabled` is an ordinary field, so switching it is an ordinary
   config write. Moving a statically declared `mcp-client` row into that map is the only way to switch a
@@ -228,9 +233,9 @@ token`), so a human presses **Merge**; `gh` is not installed.
 - profile 补丁里五个 MCP 行都在同一个 `- insert:` 组里，所以 `configuration().override` 是空的，真实原始
   配置出现在 `inherited` 里。`rawConfigOf()` 已经处理；对这种行写入会在文件末尾追加一条顶层覆盖行，撤掉
   最后一次改动时那条行会再次被删掉。
-- `configEditor.edit()` 只能改某行的 `config`：不能插入/删除行，也碰不到 `disabled`。要启停 profile 行
-  只能走 `ctx.get('pluginManager').setPluginEnabled(entryId, enabled)`，`entryId` 就是该行的
-  `entry.options.id`。
+- `configEditor.edit()` 只能改某行的 `config`：不能插入/删除行，也碰不到 `disabled`。静态 `mcp-client`
+  行因此在这里只读：plugin manager 覆盖不了自己那一层插入的行（会答 `overridden`），所以本插件干脆不给
+  这些行开关，只说明原因；探测与调用照旧可用。
 - `install_bundle` 偶尔第一次失败于 `EPERM … rename package.json.<数字>`，原样重试即成功。
 - 自带的 npm 屏蔽了 esbuild 的 postinstall，但它的 JS API 可用，`scripts/build-client.mjs` 用的就是它。
   不要调 `npx esbuild`。

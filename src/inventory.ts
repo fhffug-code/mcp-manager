@@ -1,6 +1,5 @@
 /** Every MCP server this profile mounts, from the three places that mount them. */
-import type { McpServerSpec, WorkbenchConfig } from './config.js'
-import { normalizeServerSpec } from './config.js'
+import type { McpServerSpec } from './config.js'
 import { fieldsOf } from './edit.js'
 import type { DshConfigEditor, DshConfigLayer, DshLoaderEntry, DshMcpManager } from './types/dsh.js'
 import type { ProbeSummary, ReadOnlyReason, ServerSource, ServerTimeouts, ServerView } from './types/index.js'
@@ -28,7 +27,6 @@ export interface ResolvedServer {
 export interface InventorySource {
   configEditor(): DshConfigEditor | undefined
   mcpManager(): DshMcpManager | undefined
-  config(): WorkbenchConfig
   probeSummary(name: string): ProbeSummary | undefined
 }
 
@@ -150,24 +148,26 @@ function rawConfigOf(layer: DshConfigLayer): Record<string, unknown> {
   return isRecord(layer.inherited) ? layer.inherited : {}
 }
 
-/** The servers belonging to the profile's static rows. */
+/** The servers belonging to the profile's static rows: readable and testable, not writable here. */
 function profileServers(source: InventorySource): ResolvedServer[] {
   const editor = source.configEditor()
   if (editor === undefined) return []
-  const layers = editor.configuration()
+  const manager = source.mcpManager()
+  const live = new Map<string, string>()
+  for (const view of manager?.list() ?? []) live.set(view.name, stateOf(view.status))
   const resolved: ResolvedServer[] = []
-  for (const layer of layers) {
+  for (const layer of editor.configuration()) {
     if (layer.entry.options.name !== MCP_CLIENT_PLUGIN) continue
     const raw = rawConfigOf(layer)
     const evaluated = layer.entry.options.config ?? {}
     const name = nameOfRow(layer.entry, raw, evaluated)
     const spec = specFromRecord(evaluated)
-    const enabled = layer.entry.options.disabled !== true
+    const state = live.get(name)
     const probe = source.probeSummary(name)
     resolved.push({
       name,
       source: 'profile',
-      spec,
+      ...(spec === undefined ? {} : { spec }),
       entry: layer.entry,
       raw,
       view: buildView({
@@ -175,9 +175,11 @@ function profileServers(source: InventorySource): ResolvedServer[] {
         source: 'profile',
         ...(spec === undefined ? {} : { spec }),
         raw,
-        enabled,
-        editable: true,
+        enabled: layer.entry.options.disabled !== true,
+        editable: false,
         entryId: layer.entry.options.id,
+        readOnlyReason: 'profile',
+        ...(state === undefined ? {} : { live: state }),
         ...(probe === undefined ? {} : { probe }),
       }),
     })
@@ -232,36 +234,6 @@ function managedServers(source: InventorySource): ResolvedServer[] {
   return resolved
 }
 
-/** The servers this bundle stores in its own config and registers with the manager. */
-function pluginServers(source: InventorySource): ResolvedServer[] {
-  const config = source.config()
-  const manager = source.mcpManager()
-  const live = new Map<string, string>()
-  for (const view of manager?.list() ?? []) live.set(view.name, stateOf(view.status))
-  const resolved: ResolvedServer[] = []
-  for (const [name, stored] of Object.entries(config.servers)) {
-    const spec = normalizeServerSpec(stored) ?? stored
-    const state = live.get(name)
-    const probe = source.probeSummary(name)
-    resolved.push({
-      name,
-      source: 'plugin',
-      spec,
-      raw: stored as unknown as Record<string, unknown>,
-      view: buildView({
-        name,
-        source: 'plugin',
-        spec,
-        enabled: stored.enabled !== false,
-        editable: true,
-        ...(state === undefined ? {} : { live: state }),
-        ...(probe === undefined ? {} : { probe }),
-      }),
-    })
-  }
-  return resolved
-}
-
 /** The servers the manager itself governs: readable, restartable, not writable here. */
 function managerServers(source: InventorySource, known: ReadonlySet<string>): ResolvedServer[] {
   const manager = source.mcpManager()
@@ -291,14 +263,12 @@ function managerServers(source: InventorySource, known: ReadonlySet<string>): Re
   return resolved
 }
 
-/** One consistent picture of the fleet: profile rows, the manager's map, this bundle's, then the rest. */
+/** One consistent picture of the fleet: static profile rows, the manager's map, then the rest. */
 export function readInventory(source: InventorySource): ResolvedServer[] {
   const profile = profileServers(source)
   const managed = managedServers(source).filter((server) => !profile.some((known) => known.name === server.name))
-  const claimed = new Set([...profile, ...managed].map((server) => server.name))
-  const plugin = pluginServers(source).filter((server) => !claimed.has(server.name))
-  const known = new Set<string>([...claimed, ...plugin.map((server) => server.name)])
-  return [...profile, ...managed, ...plugin, ...managerServers(source, known)]
+  const known = new Set<string>([...profile, ...managed].map((server) => server.name))
+  return [...profile, ...managed, ...managerServers(source, known)]
 }
 
 /** The server with this name, whenever any source mounts one. */

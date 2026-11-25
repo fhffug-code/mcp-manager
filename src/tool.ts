@@ -48,7 +48,7 @@ export function definition(workbench: Workbench) {
   return {
     name: TOOL_NAME,
     description:
-      'Inspect, edit, probe and test the MCP servers this profile mounts. Actions: list (all servers and their sources), detail (one server with its last probe), probe (connect once and read the full tool list with input schemas), call (invoke one tool with arguments), save (patch one server), add (create a server this plugin owns), remove (delete a plugin-owned server), setEnabled (switch a server on or off, whether this plugin owns it or the profile mounts it), restart (restart a manager-governed server). Only probe connects to a server; only call, save, add, remove, setEnabled and restart change anything, and each of those needs confirm=true. The MCP page in the sidebar offers the same operations.',
+      "Inspect, edit, probe and test the MCP servers this profile mounts. Actions: list (all servers and their sources), detail (one server with its last probe), probe (connect once and read the full tool list with input schemas), call (invoke one tool with arguments), save (patch one managed server), add (create a server in the profile's @deepseek-ai/dsh-mcp-manager row), remove (delete one server from that row), setEnabled (switch one of those servers on or off), restart (restart a manager-governed server). Static profile rows and servers registered by other plugins are shown read-only, but can still be probed and called. Only probe connects to a server; only call, save, add, remove, setEnabled and restart change anything, and each of those needs confirm=true. The MCP page in the sidebar offers the same operations.",
     parameters: {
       action: {
         type: 'string' as const,
@@ -69,7 +69,7 @@ export function definition(workbench: Workbench) {
       },
       enabled: {
         type: 'boolean' as const,
-        description: 'New state for setEnabled; a profile server is switched through the plugin manager.',
+        description: 'New state for setEnabled; only a server stored in the manager row can be switched.',
       },
       force: { type: 'boolean' as const, description: 'For probe: ignore the cached result.' },
       confirm: {

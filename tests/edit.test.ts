@@ -83,13 +83,13 @@ describe('applyPatch', () => {
     })
   })
 
-  it('drops the url when the row becomes stdio', () => {
+  it('drops the url and the headers when the row becomes stdio', () => {
     expect(
       applyPatch(
         { transport: 'streamable-http', url: 'https://host/mcp', headers: { H: 'v' } },
         { transport: 'stdio', command: 'node' },
       ),
-    ).toEqual({ transport: 'stdio', headers: { H: 'v' }, command: 'node' })
+    ).toEqual({ transport: 'stdio', command: 'node' })
   })
 
   it('merges env and headers by key, keeping expressions and deleting null entries', () => {

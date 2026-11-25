@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpPanel } from '../src/client/McpPanel.js'
 import { STYLES } from '../src/client/styles.js'
@@ -9,12 +9,13 @@ const t = (key: string): string => key
 
 const view = (over: Partial<ServerView> = {}): ServerView => ({
   name: 'clion',
-  source: 'profile',
+  source: 'managed',
   transport: 'streamable-http',
   endpoint: 'http://127.0.0.1:64362/stream',
+  url: 'http://127.0.0.1:64362/stream',
   enabled: true,
   editable: true,
-  entryId: 'mcp-clion',
+  entryId: 'mcp-manager',
   env: {},
   headers: {},
   timeouts: {},
@@ -25,6 +26,7 @@ interface Call {
   action: string
   name?: string
   enabled?: boolean
+  patch?: Record<string, unknown>
 }
 
 interface Answer {
@@ -136,5 +138,77 @@ describe('the MCP page layout', () => {
     expect(STYLES).toContain('grid-template-columns: minmax(0, 3fr) minmax(0, 7fr)')
     expect(STYLES).toContain('grid-template-rows: minmax(0, 3fr) minmax(0, 7fr)')
     expect(STYLES).toContain('.mcpw-divide-right { border-right: 1px solid')
+  })
+})
+
+describe('a server the page cannot change', () => {
+  it('offers no switch and no gear, and still takes a test connection', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list')
+        return listed(view({ source: 'profile', editable: false, entryId: 'mcp-clion', readOnlyReason: 'profile' }))
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('editServer') as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByText('clion'))
+    const test = (await screen.findByRole('button', { name: 'testConnection' })) as HTMLButtonElement
+    expect(test.disabled).toBe(false)
+  })
+})
+
+describe('the server form', () => {
+  it('keeps both transports while it is open and saves the one it shows', async () => {
+    const calls = stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      if (call.action === 'save') return { status: 200, body: { ok: true, value: view({ transport: 'stdio' }) } }
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    fireEvent.click(screen.getByLabelText('editServer'))
+
+    const dialog = await screen.findByRole('dialog')
+    const url = screen.getByLabelText('url') as HTMLInputElement
+    expect(url.value).toBe('http://127.0.0.1:64362/stream')
+
+    fireEvent.change(screen.getByLabelText('transport'), { target: { value: 'stdio' } })
+    fireEvent.change(screen.getByLabelText('command'), { target: { value: 'node' } })
+    fireEvent.change(screen.getByLabelText('transport'), { target: { value: 'streamable-http' } })
+
+    expect((screen.getByLabelText('url') as HTMLInputElement).value).toBe('http://127.0.0.1:64362/stream')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'save' }))
+
+    await waitFor(() => expect(calls.some((call) => call.action === 'save')).toBe(true))
+    expect(calls.find((call) => call.action === 'save')?.patch).toMatchObject({
+      transport: 'streamable-http',
+      url: 'http://127.0.0.1:64362/stream',
+    })
+    expect(calls.find((call) => call.action === 'save')?.patch).not.toHaveProperty('command')
+  })
+
+  it('asks once more before it deletes the server', async () => {
+    const calls = stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      if (call.action === 'remove') return { status: 200, body: { ok: true, value: { servers: [] } } }
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+    fireEvent.click(screen.getByLabelText('editServer'))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'deleteServer' }))
+    expect(calls.some((call) => call.action === 'remove')).toBe(false)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'delete' }))
+    await waitFor(() => expect(calls.some((call) => call.action === 'remove')).toBe(true))
+    expect(calls.find((call) => call.action === 'remove')).toMatchObject({ name: 'clion' })
   })
 })

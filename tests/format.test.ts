@@ -3,10 +3,12 @@ import {
   contentText,
   draftOf,
   durationText,
+  joinArgs,
   parseArguments,
   patchOf,
   probeHeadline,
   rowsOf,
+  splitArgs,
 } from '../src/client/format.js'
 import type { ServerView } from '../src/types/index.js'
 
@@ -21,6 +23,29 @@ const view = (overrides: Partial<ServerView> = {}): ServerView => ({
   headers: { Accept: { value: 'application/json', secret: false } },
   timeouts: { toolCallTimeoutMs: 1000 },
   ...overrides,
+})
+
+describe('joinArgs and splitArgs', () => {
+  it('keeps an argument with a space in one piece', () => {
+    expect(joinArgs(['--directory', 'C:\\Program Files\\x', 'run'])).toBe('--directory "C:\\Program Files\\x" run')
+    expect(splitArgs('--directory "C:\\Program Files\\x" run')).toEqual(['--directory', 'C:\\Program Files\\x', 'run'])
+  })
+
+  it('repairs a list whose quoted path was split on its spaces', () => {
+    const broken = ['--directory', '"E:\\Program', 'Files\\Blender', 'Foundation\\blender_mcp"', 'run', 'blender-mcp']
+    expect(splitArgs(joinArgs(broken))).toEqual([
+      '--directory',
+      'E:\\Program Files\\Blender Foundation\\blender_mcp',
+      'run',
+      'blender-mcp',
+    ])
+  })
+
+  it('leaves a plain list alone', () => {
+    expect(splitArgs('  stdio   --flag  ')).toEqual(['stdio', '--flag'])
+    expect(splitArgs('')).toEqual([])
+    expect(joinArgs([])).toBe('')
+  })
 })
 
 describe('rowsOf', () => {
@@ -63,13 +88,12 @@ describe('draftOf', () => {
 describe('patchOf', () => {
   it('reads a stdio form', () => {
     const draft = draftOf(view())
-    expect(patchOf(view(), { ...draft, command: ' gh.exe ', args: 'stdio  --flag ', cwd: ' ' })).toEqual({
+    expect(patchOf({ ...draft, command: ' gh.exe ', args: 'stdio  --flag ', cwd: ' ' }, 'stdio')).toEqual({
       transport: 'stdio',
       command: 'gh.exe',
       args: ['stdio', '--flag'],
       cwd: null,
       env: { BASE: 'https://host' },
-      headers: { Accept: 'application/json' },
       toolCallTimeoutMs: 1000,
       startupTimeoutMs: null,
       closeTimeoutMs: null,
@@ -78,38 +102,50 @@ describe('patchOf', () => {
 
   it('reads an http form', () => {
     const server = view({ transport: 'streamable-http', url: 'https://host/mcp' })
-    expect(patchOf(server, { ...draftOf(server), url: 'https://host/mcp' })).toMatchObject({
+    expect(patchOf(draftOf(server), 'streamable-http')).toMatchObject({
       transport: 'streamable-http',
       url: 'https://host/mcp',
+      headers: { Accept: 'application/json' },
     })
   })
 
-  it('sends only the fields the user touched', () => {
-    const server = view()
-    const draft = draftOf(server)
+  it('switches a stdio server to http without the stdio fields', () => {
+    const patch = patchOf({ ...draftOf(view()), url: 'https://other/mcp' }, 'streamable-http')
+    expect(patch).toMatchObject({ transport: 'streamable-http', url: 'https://other/mcp' })
+    expect(patch).not.toHaveProperty('command')
+    expect(patch).not.toHaveProperty('args')
+    expect(patch).not.toHaveProperty('cwd')
+    expect(patch).not.toHaveProperty('env')
+  })
+
+  it('switches an http server to stdio without the http fields', () => {
+    const server = view({ transport: 'streamable-http', url: 'https://host/mcp' })
+    const patch = patchOf({ ...draftOf(server), command: 'gh.exe' }, 'stdio')
+    expect(patch).toMatchObject({ transport: 'stdio', command: 'gh.exe' })
+    expect(patch).not.toHaveProperty('url')
+    expect(patch).not.toHaveProperty('headers')
+  })
+
+  it('sends only the entries the user touched', () => {
+    const draft = draftOf(view())
     draft.env = draft.env.map((row) => (row.key === 'BASE' ? { ...row, value: 'https://other' } : row))
-    draft.headers = draft.headers.map((row) => ({ ...row, remove: true }))
-    expect(patchOf(server, draft)).toMatchObject({
-      env: { BASE: 'https://other' },
-      headers: { Accept: null },
-    })
+    expect(patchOf(draft, 'stdio')).toMatchObject({ env: { BASE: 'https://other' } })
   })
 
   it('reads the timeouts and ignores one it cannot parse', () => {
     const draft = { ...draftOf(view()), toolCallTimeoutMs: '2000', startupTimeoutMs: ' abc', closeTimeoutMs: '0' }
-    expect(patchOf(view(), draft)).toMatchObject({ toolCallTimeoutMs: 2000 })
-    expect(patchOf(view(), draft)).not.toHaveProperty('startupTimeoutMs')
-    expect(patchOf(view(), draft)).not.toHaveProperty('closeTimeoutMs')
+    expect(patchOf(draft, 'stdio')).toMatchObject({ toolCallTimeoutMs: 2000 })
+    expect(patchOf(draft, 'stdio')).not.toHaveProperty('startupTimeoutMs')
+    expect(patchOf(draft, 'stdio')).not.toHaveProperty('closeTimeoutMs')
   })
 
   it('keeps an untouched secret unchanged', () => {
-    expect(patchOf(view(), draftOf(view()))).toEqual({
+    expect(patchOf(draftOf(view()), 'stdio')).toEqual({
       transport: 'stdio',
       command: null,
       args: null,
       cwd: null,
       env: { BASE: 'https://host' },
-      headers: { Accept: 'application/json' },
       toolCallTimeoutMs: 1000,
       startupTimeoutMs: null,
       closeTimeoutMs: null,

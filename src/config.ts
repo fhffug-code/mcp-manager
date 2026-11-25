@@ -1,10 +1,10 @@
-/** Plugin configuration: the servers this bundle owns plus probe budgets. */
+/** Plugin configuration: the probe budgets; the servers live in the profile's manager row. */
 import type { TransportKind } from './types/index.js'
 
 /** The MCP server name shape both dsh-mcp-client and dsh-mcp-manager require. */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 
-/** One server this bundle registers with the MCP manager. */
+/** One server this plugin connects to, either as stored or as patched. */
 export interface McpServerSpec {
   transport: TransportKind
   command?: string
@@ -21,8 +21,6 @@ export interface McpServerSpec {
 }
 
 export interface WorkbenchConfig {
-  /** Servers this bundle owns and registers; persisted in this plugin's own row. */
-  servers: Record<string, McpServerSpec>
   /** How long one probe may take before it is reported as a timeout. */
   probeTimeoutMs: number
   /** How long one tool call may take before it is reported as a timeout. */
@@ -33,7 +31,6 @@ export interface WorkbenchConfig {
 }
 
 export const DEFAULT_CONFIG: WorkbenchConfig = {
-  servers: {},
   probeTimeoutMs: 10_000,
   toolCallTimeoutMs: 60_000,
   probeCacheTtlMs: 30_000,
@@ -125,34 +122,17 @@ export function normalizeServerSpec(spec: unknown): McpServerSpec | undefined {
   return normalized
 }
 
-/** Read the plugin config, keeping every valid server and reporting the dropped ones. */
+/** Read the plugin config, reporting the fields this plugin no longer reads. */
 export function normalizeConfig(raw: unknown): { config: WorkbenchConfig; warnings: string[] } {
   const warnings: string[] = []
   if (raw !== undefined && !isRecord(raw))
     return { config: { ...DEFAULT_CONFIG }, warnings: ['config must be an object'] }
   const source = isRecord(raw) ? raw : {}
-  const servers: Record<string, McpServerSpec> = {}
-  const rawServers = source['servers']
-  if (rawServers !== undefined && !isRecord(rawServers)) {
-    warnings.push('config.servers must be an object')
-  } else if (isRecord(rawServers)) {
-    for (const [name, spec] of Object.entries(rawServers)) {
-      if (!SERVER_NAME_PATTERN.test(name)) {
-        warnings.push(`server "${name}" is not a valid name`)
-        continue
-      }
-      const problems = validateServerSpec(spec)
-      if (problems.length > 0) {
-        warnings.push(`server "${name}" is invalid: ${problems.join('; ')}`)
-        continue
-      }
-      const normalized = normalizeServerSpec(spec)
-      if (normalized !== undefined) servers[name] = normalized
-    }
+  if (source['servers'] !== undefined) {
+    warnings.push("config.servers is ignored; servers live in the profile's @deepseek-ai/dsh-mcp-manager row")
   }
   return {
     config: {
-      servers,
       probeTimeoutMs: readPositiveInt(source['probeTimeoutMs'], DEFAULT_CONFIG.probeTimeoutMs),
       toolCallTimeoutMs: readPositiveInt(source['toolCallTimeoutMs'], DEFAULT_CONFIG.toolCallTimeoutMs),
       probeCacheTtlMs: readPositiveInt(source['probeCacheTtlMs'], DEFAULT_CONFIG.probeCacheTtlMs),

@@ -1,5 +1,13 @@
 /** Small pure helpers the page uses; kept apart so they can be tested without a DOM. */
-import type { CallContent, ProbeResult, ProbeSummary, ServerField, ServerPatch, ServerView } from '../types/index.js'
+import type {
+  CallContent,
+  ProbeResult,
+  ProbeSummary,
+  ServerField,
+  ServerPatch,
+  ServerView,
+  TransportKind,
+} from '../types/index.js'
 
 export interface Row {
   key: string
@@ -23,6 +31,38 @@ export interface Draft {
   headers: Row[]
 }
 
+/** An argument list the way the one-line form holds it: an argument with a space is quoted. */
+export function joinArgs(args: readonly string[]): string {
+  return args.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(' ')
+}
+
+/** Split the one-line form back into arguments, keeping a quoted run together. */
+export function splitArgs(text: string): string[] {
+  const args: string[] = []
+  let current = ''
+  let quoted = false
+  let started = false
+  for (const char of text) {
+    if (char === '"') {
+      quoted = !quoted
+      started = true
+      continue
+    }
+    if (!quoted && /\s/.test(char)) {
+      if (started) {
+        args.push(current)
+        current = ''
+        started = false
+      }
+      continue
+    }
+    current += char
+    started = true
+  }
+  if (started) args.push(current)
+  return args
+}
+
 /** The editable form of one env or header map. */
 export function rowsOf(fields: Record<string, ServerField>): Row[] {
   return Object.entries(fields).map(([name, field]) => ({
@@ -40,7 +80,7 @@ export function rowsOf(fields: Record<string, ServerField>): Row[] {
 export function draftOf(view: ServerView): Draft {
   return {
     command: view.command ?? '',
-    args: (view.args ?? []).join(' '),
+    args: joinArgs(view.args ?? []),
     cwd: view.cwd ?? '',
     url: view.url ?? '',
     toolCallTimeoutMs: view.timeouts.toolCallTimeoutMs?.toString() ?? '',
@@ -70,15 +110,24 @@ function changedFields(rows: readonly Row[]): Record<string, string | null> | un
   return Object.keys(change).length === 0 ? undefined : change
 }
 
-/** Turn the form into the patch the Host applies. */
-export function patchOf(view: ServerView, draft: Draft): ServerPatch {
-  const patch: ServerPatch = { transport: view.transport }
-  if (view.transport === 'stdio') {
+/**
+ * Turn the form into the patch the Host applies, for the transport the form shows now.
+ *
+ * Only the shown transport's fields are sent; the Host drops the other side's fields when it applies
+ * the switch, so a record can never carry a mix of the two.
+ */
+export function patchOf(draft: Draft, transport: TransportKind): ServerPatch {
+  const patch: ServerPatch = { transport }
+  if (transport === 'stdio') {
     patch.command = blankToNull(draft.command)
-    patch.args = draft.args.trim() === '' ? null : draft.args.trim().split(/\s+/)
+    patch.args = draft.args.trim() === '' ? null : splitArgs(draft.args)
     patch.cwd = blankToNull(draft.cwd)
+    const env = changedFields(draft.env)
+    if (env !== undefined) patch.env = env
   } else {
     patch.url = blankToNull(draft.url)
+    const headers = changedFields(draft.headers)
+    if (headers !== undefined) patch.headers = headers
   }
   const toolCallTimeoutMs = milliseconds(draft.toolCallTimeoutMs)
   if (toolCallTimeoutMs !== undefined) patch.toolCallTimeoutMs = toolCallTimeoutMs
@@ -86,10 +135,6 @@ export function patchOf(view: ServerView, draft: Draft): ServerPatch {
   if (startupTimeoutMs !== undefined) patch.startupTimeoutMs = startupTimeoutMs
   const closeTimeoutMs = milliseconds(draft.closeTimeoutMs)
   if (closeTimeoutMs !== undefined) patch.closeTimeoutMs = closeTimeoutMs
-  const env = changedFields(draft.env)
-  if (env !== undefined) patch.env = env
-  const headers = changedFields(draft.headers)
-  if (headers !== undefined) patch.headers = headers
   return patch
 }
 

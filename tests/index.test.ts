@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/index.js'
+import { MCP_MANAGER_PLUGIN } from '../src/inventory.js'
 import { ROUTE_PATH } from '../src/route.js'
 import { TOOL_NAME } from '../src/tool.js'
-import { PLUGIN_NAME } from '../src/version.js'
-import type { DshConnection, DshFetchRoute } from '../src/types/dsh.js'
-import { entry, fakeContext, fakeEditor, fakeManager } from './helpers/fakes.js'
+import type { DshConfigLayer, DshConnection, DshFetchRoute } from '../src/types/dsh.js'
+import { entry, fakeContext, fakeEditor } from './helpers/fakes.js'
 
 const connection = (register: (route: DshFetchRoute) => unknown): DshConnection =>
   ({ fetch: { register } }) as unknown as DshConnection
@@ -16,37 +16,31 @@ describe('apply', () => {
   it('mounts the registrations, the route and the tool', () => {
     const register = vi.fn((_route: DshFetchRoute) => () => undefined)
     const tools = toolRegistry()
-    const manager = fakeManager()
-    const editor = fakeEditor([
-      { entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers: {} } }), inherited: {} },
-    ])
-    const ctx = fakeContext({ editor, manager, tools: { register: tools }, connection: connection(register) })
+    const ctx = fakeContext({ tools: { register: tools }, connection: connection(register) })
 
-    apply(ctx, { servers: { live: { transport: 'stdio', command: 'node' } } })
+    apply(ctx)
 
     expect(ctx.effects).toEqual(['mcp-workbench/registrations', 'mcp-workbench/route', 'mcp-workbench/tool'])
-    expect([...manager.registered.keys()]).toEqual(['live'])
     expect((register.mock.calls[0]?.[0] as unknown as { path: string }).path).toBe(ROUTE_PATH)
     expect((tools.mock.calls[0]?.[0] as unknown as { name: string }).name).toBe(TOOL_NAME)
   })
 
-  it('reports the config it had to drop and keeps the rest', () => {
-    const manager = fakeManager()
-    const ctx = fakeContext({ manager, connection: connection(() => () => undefined) })
+  it('says what it ignores in the config it was given', () => {
+    const ctx = fakeContext({ connection: connection(() => () => undefined) })
 
     apply(ctx, { servers: { broken: { transport: 'stdio' } } })
 
-    expect(ctx.logger.warn).toHaveBeenCalledWith('mcp-workbench: server "broken" is invalid: command is required')
-    expect(manager.registered.size).toBe(0)
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      "mcp-workbench: config.servers is ignored; servers live in the profile's @deepseek-ai/dsh-mcp-manager row",
+    )
   })
 
-  it('keeps the servers it stores in step with the route', async () => {
+  it('stores a server it adds on the manager row the route serves', async () => {
     const register = vi.fn((_route: DshFetchRoute) => () => undefined)
-    const manager = fakeManager()
-    const editor = fakeEditor([
-      { entry: entry({ id: 'mcp-workbench', name: PLUGIN_NAME, config: { servers: {} } }), inherited: {} },
-    ])
-    const ctx = fakeContext({ editor, manager, connection: connection(register) })
+    const layers: DshConfigLayer[] = [
+      { entry: entry({ id: 'mcp-manager', name: MCP_MANAGER_PLUGIN, config: { servers: {} } }), inherited: {} },
+    ]
+    const ctx = fakeContext({ editor: fakeEditor(layers), connection: connection(register) })
     apply(ctx)
 
     const route = register.mock.calls[0]?.[0] as unknown as { fetch(request: Request): Promise<Response> }
@@ -61,7 +55,9 @@ describe('apply', () => {
       post({ action: 'add', name: 'fresh', spec: { transport: 'stdio', command: 'node' } }),
     )
     expect(added.status).toBe(200)
-    expect(manager.registered.has('fresh')).toBe(true)
+    expect(layers[0]?.entry.options.config).toEqual({
+      servers: { fresh: { transport: 'stdio', command: 'node' } },
+    })
 
     const listed = (await (await route.fetch(post({ action: 'list' }))).json()) as {
       ok: boolean

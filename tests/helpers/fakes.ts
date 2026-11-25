@@ -11,7 +11,6 @@ import type {
   DshLogger,
   DshManagedServerView,
   DshMcpManager,
-  DshPluginManagerFace,
   DshToolRegistry,
 } from '../../src/types/dsh.js'
 
@@ -77,30 +76,6 @@ export function fakeManager(views: DshManagedServerView[] = []): FakeManager {
   }
 }
 
-export interface FakePluginManager extends DshPluginManagerFace {
-  calls: { id: string; enabled: boolean }[]
-}
-
-export interface FakePluginManagerOptions {
-  /** What the profile does with the switch, as the real manager would: flip the row's `disabled`. */
-  apply?: (id: string, enabled: boolean) => void
-  /** The runtime outcome the manager reports. */
-  application?: string
-}
-
-/** The profile manager, recording which entry each switch targeted. */
-export function fakePluginManager(options: FakePluginManagerOptions = {}): FakePluginManager {
-  const calls: { id: string; enabled: boolean }[] = []
-  return {
-    calls,
-    async setPluginEnabled(id, enabled) {
-      calls.push({ id, enabled })
-      options.apply?.(id, enabled)
-      return { changed: true, ...(options.application === undefined ? {} : { application: options.application }) }
-    },
-  }
-}
-
 export interface FakeCredentials extends DshCredentialsFace {
   asked: string[]
 }
@@ -135,7 +110,6 @@ export interface FakeContextOptions {
   manager?: DshMcpManager
   tools?: DshToolRegistry
   connection?: DshConnection
-  pluginManager?: DshPluginManagerFace
   credentials?: DshCredentialsFace
 }
 
@@ -144,7 +118,6 @@ export function fakeContext(options: FakeContextOptions = {}): FakeContext {
   const services: Record<string, unknown> = {
     configEditor: options.editor,
     mcpManager: options.manager,
-    pluginManager: options.pluginManager,
     credentials: options.credentials,
     tools: options.tools,
     connection: options.connection,

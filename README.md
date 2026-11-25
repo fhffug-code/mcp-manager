@@ -1,14 +1,14 @@
 # MCP Workbench
 
-A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after **Plugins** and the plugin marketplace. It lists the MCP servers this profile mounts, edits their configuration, switches them on and off, probes them for the tools they expose, and lets you send a tool call with arguments that were prefilled from the tool's own schema — from that page and from a tool the model can use.
+A DeepSeek Harness plugin that adds an **MCP** page to the sidebar, right after **Plugins** and the plugin marketplace. It shows the MCP servers this profile mounts, edits the ones the official `@deepseek-ai/dsh-mcp-manager` row holds, switches them on and off, probes them for the tools they expose, and lets you send a tool call with arguments that were prefilled from the tool's own schema — from that page and from a tool the model can use.
 
-**中文简介**：这个插件在左侧栏【插件】【插件市场】之后加一个「MCP」入口，进来是「MCP 管理」页面：查看当前 profile 挂载的所有 MCP 服务器、就地修改配置、启动或关闭服务器、探测工具并直接传参调用（参数按该工具的 inputSchema 预填）；同时注册一个 `mcp_workbench` 工具，让模型也能做同样的事。所有改动都走 DSH 官方的 ConfigEditor 与 plugin_manager，不会手写 profile 配置文件。
+**中文简介**：这个插件在左侧栏【插件】【插件市场】之后加一个「MCP」入口，进来是「MCP 管理」页面：查看当前 profile 挂载的所有 MCP 服务器、编辑官方 `@deepseek-ai/dsh-mcp-manager` 那一行里的服务器（增删、改配置、启停）、探测工具并直接传参调用（参数按该工具的 inputSchema 预填）；同时注册一个 `mcp_workbench` 工具，让模型也能做同样的事。所有改动都走 DSH 官方的 ConfigEditor，不会手写 profile 配置文件。
 
 ## What it does
 
-- **See every server.** Profile rows (`@deepseek-ai/dsh-mcp-client` entries in the profile patch), the servers this bundle owns, and servers other plugins registered through `mcpManager` appear in one searchable list with their transport, live state, and endpoint.
-- **Switch a server on or off.** A profile row is toggled through the official plugin manager, which rewrites only `disabled` in the profile patch; a server the profile hands to `@deepseek-ai/dsh-mcp-manager` is toggled in that row's `servers` map; a server this bundle owns is toggled in its own row.
-- **Edit in place.** A profile row is edited through `ctx.configEditor.edit()`, so comments and `!!js` expressions survive and the row is validated before it is written. A missing field keeps its stored value, an empty one removes it.
+- **See every server.** Static `@deepseek-ai/dsh-mcp-client` rows of the profile patch, the servers in the profile's `@deepseek-ai/dsh-mcp-manager` row, and servers other plugins registered through `mcpManager` appear in one searchable list with their transport, live state, and endpoint.
+- **Manage the manager row.** Add a server, edit it, switch it on or off, or delete it — each write goes into that row's `servers` map through `ctx.configEditor.edit()`, so comments and `!!js` expressions elsewhere in the patch survive and the row is validated before it is written.
+- **Leave the rest alone.** A static profile row and a server another plugin registered are shown read-only; they can still be probed and called. Nothing else in the profile is touched.
 - **Probe for tools.** The probe keeps its own MCP session per server — opened on first use, reused by later probes and calls, closed when the server is written, restarted or the plugin stops — so it works on a disabled server, does not disturb the connection the agent is using, and returns tool names, descriptions and input schemas with a name and schema budget.
 - **Test a call.** Pick a tool, get its arguments prefilled from the input schema, send them, and read the answer three ways: JSON, a foldable tree, or the raw request and response.
 - **One logic, two surfaces.** The page and the model-facing tool call the same Host service, so both behave the same way.
@@ -38,23 +38,21 @@ The bundle stays installed across restarts and belongs to the profile, not to on
 
 ## The three sources of a server
 
-| Source    | What it is                                                   | What this plugin may do                     |
-| --------- | ------------------------------------------------------------ | ------------------------------------------- |
-| `profile` | A static `@deepseek-ai/dsh-mcp-client` row in the patch      | Edit its configuration, switch it on or off |
-| `managed` | A server in the profile's `@deepseek-ai/dsh-mcp-manager` row | Edit it, switch it on or off, remove it     |
-| `plugin`  | A server stored in this bundle's own `servers` config        | Add, remove, enable, disable, edit, restart |
-| `manager` | A server another plugin registered on `ctx.mcpManager`       | Read it, restart it                         |
+| Source    | What it is                                                   | What this plugin may do                       |
+| --------- | ------------------------------------------------------------ | --------------------------------------------- |
+| `profile` | A static `@deepseek-ai/dsh-mcp-client` row in the patch      | Read it, probe it, call its tools             |
+| `managed` | A server in the profile's `@deepseek-ai/dsh-mcp-manager` row | Add, edit, switch it on or off, remove it     |
+| `manager` | A server another plugin registered on `ctx.mcpManager`       | Read it, probe it, call its tools, restart it |
 
-A profile row cannot be added or removed here: those are entry options that
-`configEditor.edit()` does not write. It can be switched on and off, because that is what the
-plugin manager writes — unless the patch mounts it inside an `insert:` group, which is the one
-case a patch layer cannot override, and then the page reports that refusal instead of pretending
-it switched. A profile row also cannot be restarted, because the manager does not govern it.
+This plugin writes in exactly one place: the `servers` map of the profile row whose name is
+`@deepseek-ai/dsh-mcp-manager`. Everything it adds, edits, switches or removes lands there, so the
+page is the editor of that official fleet rather than a fleet of its own.
 
-A `managed` server lives in the `servers` map of a profile row whose name is
-`@deepseek-ai/dsh-mcp-manager`. That fleet treats `enabled` as an ordinary field of the map, so a
-switch here is a plain config write and takes effect at once. Moving a static row into that map is
-what makes it switchable:
+A profile row cannot be edited here. It is not writable at all: `configEditor.edit()` can change a
+row's `config`, but the five MCP rows of a profile patch usually sit inside one `insert:` group, and
+the plugin manager cannot override a row its own layer inserts (it answers `overridden`). So a
+profile row is shown read-only — you can still probe it and call its tools — and the page tells you
+to move it into the manager row if you want it switchable. That move is what makes it switchable:
 
 ```yaml
 # instead of a `- insert:` group of @deepseek-ai/dsh-mcp-client rows:
@@ -82,10 +80,8 @@ because validating the marker as data is what the config editor does. Keep a sec
 credential store and write `${credential:<name>}`, which the manager resolves when it starts the
 server, or write a literal.
 
-A row the patch mounts inside an `insert:` group is edited by writing a top-level row that
-carries the whole configuration, because that is the row `configEditor.edit()` can address;
-the insert child stays as it was and the new row takes precedence. Removing the last change
-removes that row again, so the file returns to what it held before.
+A server another plugin registered on `mcpManager` is read-only here too: it belongs to that
+plugin. It can be probed, its tools called, and it can be restarted.
 
 ## The page
 
@@ -93,9 +89,12 @@ One page of nested bands, each separated from the next by a hairline: a third fo
 the rest split again a third to the tools and two thirds to the tool itself.
 
 - **Servers** (the left third). Every server the profile mounts, with its source, transport and
-  state. The switch on the right of a row turns it on or off and shows the new state as soon as
-  you click it; the gear opens its configuration. The search filters by name, source and
-  endpoint. A refusal appears under the row that refused, not only at the top of the page.
+  state. **Add server** on the right of the page title writes a new one into the manager row. A
+  managed server's row has a switch that turns it on or off and shows the new state as soon as you
+  click it, plus a gear that opens its configuration; a row that belongs to the profile or to
+  another plugin has neither, because nothing here can change it. The search filters by name,
+  source and endpoint. A refusal appears under the row that refused, not only at the top of the
+  page.
 - **Tool bar** (top of the right side). **Test connection** on the start, the tool search on the
   end. The probe connects once, and the button becomes **Test again**; the summary beside it
   reports the tool count or why the connection failed.
@@ -110,16 +109,20 @@ Press **Send** and read the answer as **JSON**, as a **Tree** of foldable nodes,
 **Raw** request and response pair. A tool that reports `isError` is still a result, not a
 failed request, and the page says which one it got.
 
-Switching a server is the profile's own switch: the Host calls `pluginManager.setPluginEnabled`
-for the row, so the state survives a restart and the row's configuration is left alone. The
-answer is read before anything is claimed: the row is only reported as switched once the
-composition agrees, otherwise the page shows the manager's reason under that row.
+A switch is a plain config write on the manager row, so it survives a restart and the row's
+configuration is left alone. The answer is read before anything is claimed: the row is only
+reported as switched once the list agrees, otherwise the page shows the reason under that row.
 
-The configuration form is a dialog behind the gear:
+The configuration form is a dialog behind the gear, and the same form creates a server:
 
-- **Transport** switches the form between `stdio` (command, arguments, working directory) and `streamable-http` (URL).
+- **Transport** switches between `stdio` (command, arguments, working directory) and
+  `streamable-http` (URL). It is available while editing too, and each side keeps its own values
+  while the dialog stays open, so flipping to `streamable-http` and back does not lose the command
+  you typed. Saving writes the side the selector points at and drops the other one.
 - **Environment** and **headers** are edited row by row; a value whose name looks like a secret (`TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`) is shown masked and is never sent to the browser.
 - A `!!js` value is shown as the expression behind it and is written back as an expression.
+- **Delete server** sits at the end of a managed server's form and asks once before it removes the
+  entry from the manager row. Cancel and nothing is written.
 
 Refusals are shown with the reason the Host gave: an unknown server, a read-only source, a name that is already taken, a value that would not parse, or a field a home patch overrides.
 
@@ -154,12 +157,14 @@ The row this bundle mounts takes these options:
 
 | Key                 | Default  | Meaning                                           |
 | ------------------- | -------- | ------------------------------------------------- |
-| `servers`           | `{}`     | The servers this bundle owns and registers        |
 | `probeTimeoutMs`    | `10000`  | How long one probe may take                       |
 | `toolCallTimeoutMs` | `60000`  | How long one test call may take                   |
 | `probeCacheTtlMs`   | `30000`  | How long a probe result is reused                 |
 | `resultMaxBytes`    | `262144` | The budget for the content a test call may return |
 | `maxToolSchemas`    | `200`    | How many tool schemas one probe may collect       |
+
+Servers are not a bundle option: they live in the profile's `@deepseek-ai/dsh-mcp-manager` row. A
+`servers` key left in this bundle's config is ignored, with a warning in the log.
 
 ## Safety
 
