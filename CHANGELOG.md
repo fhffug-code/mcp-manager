@@ -17,7 +17,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
-- A release the workflow writes is published even when `gh` leaves it as a draft, and the release it tops up is refreshed deliberately: the publishing step now ends with `gh release edit … --draft=false --latest`, so neither a draft `gh` created nor one a person drafted by hand stays hidden.
+- A release the workflow writes is published even when `gh` leaves it as a draft, and the release it tops up is refreshed deliberately: the publishing step now ends with `gh release edit … --draft=false`, so neither a draft `gh` created nor one a person drafted by hand stays hidden. That last step marks the release latest unless it is a pre-release — a tag such as `v0.2.0-rc.1` keeps the label it was given and is not forced into `latest`.
 
 ## [0.1.0] - 2026-11-25
 
