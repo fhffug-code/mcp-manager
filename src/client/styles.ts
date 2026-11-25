@@ -61,7 +61,7 @@ export const STYLES = `
 .mcp-workbench textarea { font-family: ${palette.code}; resize: vertical; }
 .mcp-workbench input::placeholder, .mcp-workbench textarea::placeholder { color: ${palette.muted}; }
 .mcpw-split {
-  display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 8fr);
   flex: 1; min-height: 0; column-gap: 0;
 }
 .mcpw-rows {

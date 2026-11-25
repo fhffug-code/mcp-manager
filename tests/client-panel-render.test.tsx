@@ -135,8 +135,8 @@ describe('the MCP page layout', () => {
     }
   })
 
-  it('splits 3/7 and separates the bands with a hairline', () => {
-    expect(STYLES).toContain('grid-template-columns: minmax(0, 3fr) minmax(0, 7fr)')
+  it('splits 2/8 and separates the bands with a hairline', () => {
+    expect(STYLES).toContain('grid-template-columns: minmax(0, 2fr) minmax(0, 8fr)')
     expect(STYLES).toContain('grid-template-rows: minmax(0, 3fr) minmax(0, 7fr)')
     expect(STYLES).toContain('.mcpw-divide-right { border-right: 1px solid')
   })
