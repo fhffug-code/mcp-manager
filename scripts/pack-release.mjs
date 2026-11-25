@@ -2,7 +2,7 @@
 // Stages the files a bundle needs and zips them, so a release asset can be uploaded by CI or by hand.
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFile, cp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { access, appendFile, cp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -53,6 +53,14 @@ function zip(source, target) {
 async function main() {
   const manifest = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'))
   const version = String(manifest.version)
+  // `npm run pack` without a build would ship a zip that cannot load, so fail before staging.
+  for (const entry of ['lib/index.js', 'lib/client.js']) {
+    try {
+      await access(join(ROOT, entry))
+    } catch {
+      throw new Error(`${entry} is missing; run "npm run build" before packing`)
+    }
+  }
   const stage = join(DIST, `mcp-workbench-${version}`)
   const asset = `dsh-mcp-workbench-${version}.zip`
   const archive = join(DIST, asset)
