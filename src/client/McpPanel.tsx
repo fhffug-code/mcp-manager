@@ -1,12 +1,16 @@
 /** The MCP page: servers on the left, tools beside them, one tool's detail above its test call. */
 import { useEffect, useMemo, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { CallResult, ProbeResult, ProbeTool, ServerView } from '../types/index.js'
 import { createApi } from './api.js'
 import type { Translate } from './context.js'
 import { contentText, durationText, parseArguments } from './format.js'
 import { JsonText, JsonTree } from './JsonView.js'
+import { DEFAULT_LAYOUT, LIMITS, readLayout, writeLayout } from './layout.js'
+import type { Layout } from './layout.js'
 import { prefillArguments } from './prefill.js'
 import { ServerEditor } from './ServerEditor.js'
+import { Splitter } from './Splitter.js'
 import { barStyle, columnStyle, headerStyle, inputStyle, labelStyle, palette, STYLES } from './styles.js'
 
 /** Which result view the page shows: the payload as JSON, as a tree, or the whole exchange. */
@@ -28,6 +32,23 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /** The arguments typed for one tool: each tool of each server keeps its own draft. */
 const draftKey = (server: string | undefined, tool: string): string => `${server ?? ''}\u0000${tool}`
+
+/** The browser's own storage, or nothing when it refuses to hand it over. */
+const storage = (): Storage | undefined => {
+  try {
+    return window.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+/** The division as the three custom properties the stylesheet reads. */
+const layoutVars = (layout: Layout): CSSProperties =>
+  ({
+    '--mcpw-servers': `${(layout.servers * 100).toFixed(2)}%`,
+    '--mcpw-tools': `${(layout.tools * 100).toFixed(2)}%`,
+    '--mcpw-detail': `${(layout.detail * 100).toFixed(2)}%`,
+  }) as CSSProperties
 
 /** One clickable row: a muted second line that may be clamped to two lines. */
 function RowButton({
@@ -77,6 +98,23 @@ export function McpPanel({ t }: PanelProps) {
   const [pending, setPending] = useState<Record<string, boolean>>({})
   const [rowError, setRowError] = useState<Record<string, string>>({})
   const [editor, setEditor] = useState<{ mode: 'add' | 'edit'; view?: ServerView }>()
+  const [layout, setLayout] = useState<Layout>(() => readLayout(storage()))
+
+  useEffect(() => {
+    writeLayout(storage(), layout)
+  }, [layout])
+
+  /** A splitter moved one band: keep it inside its limits and let the page re-render. */
+  const setShare =
+    (key: keyof Layout) =>
+    (next: number): void => {
+      setLayout((current) => ({ ...current, [key]: next }))
+    }
+
+  /** A double click on a splitter: that band goes back to the share the page starts with. */
+  const resetShare = (key: keyof Layout) => (): void => {
+    setLayout((current) => ({ ...current, [key]: DEFAULT_LAYOUT[key] }))
+  }
 
   const refresh = async (): Promise<void> => {
     try {
@@ -240,6 +278,7 @@ export function McpPanel({ t }: PanelProps) {
     <div
       className="mcp-workbench"
       style={{
+        ...layoutVars(layout),
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
@@ -260,10 +299,10 @@ export function McpPanel({ t }: PanelProps) {
 
       {failure === undefined ? null : <div style={{ color: palette.danger }}>{failure}</div>}
 
-      <div className="mcpw-split">
+      <div className="mcpw-row">
         <section
           data-testid="split-servers"
-          className="mcpw-divide-right"
+          className="mcpw-cell mcpw-cell-servers mcpw-divide-right"
           style={columnStyle}
           aria-label={t('servers')}
         >
@@ -328,8 +367,17 @@ export function McpPanel({ t }: PanelProps) {
             )}
           </div>
         </section>
+        <Splitter
+          axis="x"
+          value={layout.servers}
+          minMax={LIMITS.servers}
+          onChange={setShare('servers')}
+          onReset={resetShare('servers')}
+          label={t('splitServers')}
+          testId="sep-servers"
+        />
 
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+        <div className="mcpw-cell mcpw-grow">
           <div data-testid="bar-tools" className="mcpw-divide-bottom" style={barStyle}>
             <button
               type="button"
@@ -349,10 +397,10 @@ export function McpPanel({ t }: PanelProps) {
             />
           </div>
 
-          <div className="mcpw-split">
+          <div className="mcpw-row">
             <section
               data-testid="split-tools"
-              className="mcpw-divide-right"
+              className="mcpw-cell mcpw-cell-tools mcpw-divide-right"
               style={columnStyle}
               aria-label={t('tools')}
             >
@@ -386,11 +434,20 @@ export function McpPanel({ t }: PanelProps) {
                 </>
               )}
             </section>
+            <Splitter
+              axis="x"
+              value={layout.tools}
+              minMax={LIMITS.tools}
+              onChange={setShare('tools')}
+              onReset={resetShare('tools')}
+              label={t('splitTools')}
+              testId="sep-tools"
+            />
 
-            <div className="mcpw-rows">
+            <div className="mcpw-cell mcpw-grow">
               <section
                 data-testid="cell-description"
-                className="mcpw-divide-bottom"
+                className="mcpw-cell mcpw-cell-description mcpw-divide-bottom"
                 style={{ ...columnStyle, overflow: 'hidden' }}
                 aria-label={t('toolDetail')}
               >
@@ -408,8 +465,22 @@ export function McpPanel({ t }: PanelProps) {
                   </>
                 )}
               </section>
+              <Splitter
+                axis="y"
+                value={layout.detail}
+                minMax={LIMITS.detail}
+                onChange={setShare('detail')}
+                onReset={resetShare('detail')}
+                label={t('splitDetail')}
+                testId="sep-detail"
+              />
 
-              <section data-testid="cell-call" style={columnStyle} aria-label={t('tryCall')}>
+              <section
+                data-testid="cell-call"
+                className="mcpw-cell mcpw-grow"
+                style={columnStyle}
+                aria-label={t('tryCall')}
+              >
                 {tool === undefined ? (
                   <div style={labelStyle}>{t('pickTool')}</div>
                 ) : (

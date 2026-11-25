@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpPanel } from '../src/client/McpPanel.js'
+import { DEFAULT_LAYOUT, LAYOUT_KEY } from '../src/client/layout.js'
 import { STYLES } from '../src/client/styles.js'
 import type { ServerView } from '../src/types/index.js'
 
@@ -135,10 +136,53 @@ describe('the MCP page layout', () => {
     }
   })
 
-  it('splits 2/8 and separates the bands with a hairline', () => {
-    expect(STYLES).toContain('grid-template-columns: minmax(0, 2fr) minmax(0, 8fr)')
-    expect(STYLES).toContain('grid-template-rows: minmax(0, 3fr) minmax(0, 7fr)')
+  it('separates the bands with a hairline and a handle on each split', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
     expect(STYLES).toContain('.mcpw-divide-right { border-right: 1px solid')
+    const separators = screen.getAllByRole('separator')
+    expect(separators.map((node) => node.getAttribute('aria-orientation'))).toEqual([
+      'vertical',
+      'vertical',
+      'horizontal',
+    ])
+    for (const id of ['sep-servers', 'sep-tools', 'sep-detail']) expect(screen.getByTestId(id)).toBeTruthy()
+  })
+
+  it('starts at 2/8 and remembers a share it was dragged to', async () => {
+    stubFetch((call) => {
+      if (call.action === 'list') return listed(view())
+      return { status: 200, body: { ok: true, value: { server: view() } } }
+    })
+
+    expect(DEFAULT_LAYOUT).toEqual({ servers: 0.2, tools: 0.3, detail: 0.3 })
+
+    render(<McpPanel t={t} />)
+    await screen.findByText('clion')
+
+    fireEvent.keyDown(screen.getByTestId('sep-servers'), { key: 'ArrowRight' })
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { servers: number }
+      expect(stored.servers).toBeGreaterThan(0.2)
+    })
+
+    fireEvent.keyDown(screen.getByTestId('sep-detail'), { key: 'ArrowDown' })
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { detail: number }
+      expect(stored.detail).toBeGreaterThan(0.3)
+    })
+
+    fireEvent.doubleClick(screen.getByTestId('sep-servers'))
+    await waitFor(() => {
+      const stored = JSON.parse(String(localStorage.getItem(LAYOUT_KEY))) as { servers: number }
+      expect(stored.servers).toBe(0.2)
+    })
   })
 })
 

@@ -85,10 +85,13 @@ plugin. It can be probed, its tools called, and it can be restarted.
 
 ## The page
 
-One page of nested bands, each separated from the next by a hairline: a third for the servers,
-the rest split again a third to the tools and two thirds to the tool itself.
+One page of nested bands, each separated from the next by a hairline: the servers take a fifth,
+the tools three tenths, and the rest belongs to the tool itself. Drag any of the three separators
+to change a share, or focus one and press the arrow keys (hold `Shift` for a bigger step, `Home`
+and `End` for the ends); a double click puts that band back where it started. The shares are kept
+in the page's own `localStorage`, so they come back the next time it opens.
 
-- **Servers** (the left third). Every server the profile mounts, with its source, transport and
+- **Servers** (the left fifth). Every server the profile mounts, with its source, transport and
   state. **Add server** on the right of the page title writes a new one into the manager row. A
   managed server's row has a switch that turns it on or off and shows the new state as soon as you
   click it, plus a gear that opens its configuration; a row that belongs to the profile or to
@@ -98,12 +101,14 @@ the rest split again a third to the tools and two thirds to the tool itself.
 - **Tool bar** (top of the right side). **Test connection** on the start, the tool search on the
   end. The probe connects once, and the button becomes **Test again**; the summary beside it
   reports the tool count or why the connection failed.
-- **Tools** (a third of the right side). Each row shows the tool name and two lines of its
+- **Tools** (three tenths of the right side). Each row shows the tool name and two lines of its
   description; the search filters on both.
-- **One tool** (two thirds of the right side, split again). The upper third is the description,
-  the lower third the test call, which takes whatever height is left. The arguments are
-  prefilled from the tool's input schema (`default`, then `examples[0]`, then the first `enum`
-  member, then an empty value of the right type), and stay editable as JSON.
+- **One tool** (the remaining three tenths, split again). The upper band is the description, the
+  lower one the call, which takes whatever height is left. The arguments are prefilled from the
+  tool's input schema (`default`, then `examples[0]`, then the first `enum` member, then an empty
+  value of the right type), and stay editable as JSON. **Reset** puts the prefilled arguments
+  back. Each tool of each server remembers the arguments you typed for it: leaving the tool and
+  coming back — or clicking the same row again — keeps your text instead of overwriting it.
 
 Press **Send** and read the answer as **JSON**, as a **Tree** of foldable nodes, or as the
 **Raw** request and response pair. A tool that reports `isError` is still a result, not a
